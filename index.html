@@ -61,6 +61,10 @@
   .gcars button { font-family: var(--font-body); font-size: 14px; font-weight: 600; padding: 12px; border-radius: 9px; border: 1px solid rgba(255,255,255,0.16); background: rgba(255,255,255,0.06); color: var(--hud-fg); cursor: pointer; text-align: left; }
   .gcars button small { display: block; font-weight: 400; font-size: 12px; color: var(--hud-dim); margin-top: 3px; }
   .gcars button[aria-pressed="true"] { border-color: var(--accent); background: rgba(255, 204, 51, 0.16); }
+  .gmode { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .gmode button { font-family: var(--font-body); font-size: 14px; font-weight: 700; text-align: left; padding: 10px 12px; border-radius: 9px; border: 2px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.06); color: inherit; cursor: pointer; }
+  .gmode button small { display: block; font-weight: 400; font-size: 12px; color: var(--hud-dim); margin-top: 3px; }
+  .gmode button[aria-pressed="true"] { border-color: var(--accent); background: rgba(255, 204, 51, 0.16); }
   .gcolors { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .gswatches { display: flex; gap: 8px; flex-wrap: wrap; }
   .gswatches button { width: 32px; height: 32px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.35); cursor: pointer; padding: 0; }
@@ -120,6 +124,7 @@
     <div id="gCars" class="gcars"></div>
     <div class="gcolors"><div id="gSwatches" class="gswatches"></div>
       <label class="gcustom">Özel renk <input id="gColor" type="color" value="#b0000a"></label></div>
+    <div id="gMode" class="gmode" role="group" aria-label="Oyun modu"><button type="button" data-mode="race">Yarış<small>Tur ve süre</small></button><button type="button" data-mode="cruise">Şehir gezintisi<small>Okul, dükkanlar, serbest sürüş</small></button></div>
     <button id="gStart" class="gstart" type="button">Yarışa başla <kbd>Enter</kbd></button>
     <p id="gCredit" class="credits"></p>
   </div>
@@ -144,6 +149,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 import { Sky } from 'three/addons/objects/Sky.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 (() => {
   // ---------- Renderer, scene, camera ----------
   const host = document.getElementById('game');
@@ -224,6 +230,7 @@ import { Sky } from 'three/addons/objects/Sky.js';
     }
   });
 
+  const preRace = new Set(scene.children);   // everything added after this belongs to the race map
   // ---------- Ground ----------
   const grassPhoto = new THREE.TextureLoader().load('assets/grasslight-big.jpg');
   grassPhoto.wrapS = grassPhoto.wrapT = THREE.RepeatWrapping; grassPhoto.repeat.set(160, 160);
@@ -678,15 +685,330 @@ import { Sky } from 'three/addons/objects/Sky.js';
     toast('Renk: ' + PAINTS[paintIdx].name);
   }
 
+  // ---------- Cruise mode: a separate street-grid city (school, zebra crossings, Onur Tekel) ----------
+  const raceObjs = scene.children.filter(o => !preRace.has(o) && o !== car);
+  const cruiseG = new THREE.Group(); cruiseG.visible = false; scene.add(cruiseG);
+  const CX = -160, CZ = 1700, P = 80, G = 4, RH = 6, SW = 4;   // grid origin, road spacing, blocks per side, road half width, sidewalk
+  const SPAN = G * P;
+  const buckets = new Map();   // material -> geometries, merged into one mesh each to keep draw calls low
+  function bake(mat, geo) { if (!buckets.has(mat)) buckets.set(mat, []); buckets.get(mat).push(geo); }
+  function flushBuckets() {
+    for (const [mat, list] of buckets) {
+      const m = new THREE.Mesh(mergeGeometries(list.map(g => g.index ? g.toNonIndexed() : g)), mat);
+      m.castShadow = true; m.receiveShadow = true; cruiseG.add(m);
+    }
+    buckets.clear();
+  }
+  // axis-aligned box with facade UVs scaled to metres (tile = size of one texture repeat)
+  function boxGeo(x0, x1, z0, z1, h, tile, y0 = 0) {
+    const w = x1 - x0, d = z1 - z0, geo = new THREE.BoxGeometry(w, h, d), uv = geo.attributes.uv;
+    for (let f = 0; f < 6; f++) for (let k = 0; k < 4; k++) {
+      const j = f * 4 + k;
+      if (f === 2 || f === 3) { uv.setXY(j, 0.02, 0.02); continue; }
+      const span = f < 2 ? d : w;
+      uv.setXY(j, uv.getX(j) * span / tile, uv.getY(j) * h / tile);
+    }
+    geo.translate((x0 + x1) / 2, y0 + h / 2, (z0 + z1) / 2);
+    return geo;
+  }
+  function building(x0, x1, z0, z1, h) {
+    bake(facadeMats[(Math.random() * facadeMats.length) | 0], boxGeo(x0, x1, z0, z1, h, TILE));
+    bake(roofMat, boxGeo(x0 - 0.2, x1 + 0.2, z0 - 0.2, z1 + 0.2, 0.5, 100, h));
+  }
+  const keepOut = [];   // rectangles left free for special buildings
+  const blocked = (x0, x1, z0, z1) => keepOut.some(r => x0 < r[1] && x1 > r[0] && z0 < r[3] && z1 > r[2]);
+  // a row of buildings along one side of a street: from a to b along the street, front at `front`, extending `dirOut` away from it
+  function row(alongX, a, b, front, dirOut) {
+    let s = a;
+    while (s < b - 4) {
+      let w = 10 + Math.random() * 8; if (b - (s + w) < 8) w = b - s;
+      const d = 12 + Math.random() * 5;
+      const h = Math.random() < 0.15 ? 24 + Math.random() * 18 : 8 + Math.random() * 12;
+      const f0 = front, f1 = front + dirOut * d;
+      const [x0, x1, z0, z1] = alongX ? [s, s + w, Math.min(f0, f1), Math.max(f0, f1)] : [Math.min(f0, f1), Math.max(f0, f1), s, s + w];
+      if (!blocked(x0, x1, z0, z1)) building(x0, x1, z0, z1, h);
+      s += w;
+    }
+  }
+
+  // School block (column 1, row 1) and the Onur Tekel spot are reserved first
+  const SB = { x0: CX + P + RH + SW, x1: CX + 2 * P - RH - SW, z0: CZ + P + RH + SW, z1: CZ + 2 * P - RH - SW };
+  keepOut.push([SB.x0, SB.x1, SB.z0, SB.z1]);
+  const SHOP = { x1: CX + 2 * P - RH - SW, z0: CZ + 52, z1: CZ + 66 };   // east edge of block (1,0), facing the street x = 0
+  keepOut.push([SHOP.x1 - 14, SHOP.x1, SHOP.z0, SHOP.z1]);
+
+  // blocks: buildings line every street, the courtyard stays hidden behind them
+  for (let bi = 0; bi < G; bi++) for (let bj = 0; bj < G; bj++) {
+    const x0 = CX + bi * P + RH + SW, x1 = CX + (bi + 1) * P - RH - SW;
+    const z0 = CZ + bj * P + RH + SW, z1 = CZ + (bj + 1) * P - RH - SW;
+    row(true, x0, x1, z0, 1); row(true, x0, x1, z1, -1);
+    row(false, z0 + 12, z1 - 12, x0, 1); row(false, z0 + 12, z1 - 12, x1, -1);
+  }
+  // outer ring of buildings closes the city
+  row(true, CX - RH - SW - 14, CX + SPAN + RH + SW + 14, CZ - RH - SW, -1);
+  row(true, CX - RH - SW - 14, CX + SPAN + RH + SW + 14, CZ + SPAN + RH + SW, 1);
+  row(false, CZ - RH - SW, CZ + SPAN + RH + SW, CX - RH - SW, -1);
+  row(false, CZ - RH - SW, CZ + SPAN + RH + SW, CX + SPAN + RH + SW, 1);
+
+  // ground, roads, intersections, sidewalks
+  {
+    const g = new THREE.Mesh(new THREE.PlaneGeometry(SPAN + 200, SPAN + 200), new THREE.MeshStandardMaterial({ color: 0x6f7268, roughness: 1 }));
+    g.rotation.x = -Math.PI / 2; g.position.set(CX + SPAN / 2, 0, CZ + SPAN / 2); g.receiveShadow = true; cruiseG.add(g);
+    const segLen = P - 2 * RH;
+    const laneTex = asphaltTex.clone(); laneTex.repeat.set(1, segLen / 12); laneTex.needsUpdate = true;
+    const laneMat = new THREE.MeshStandardMaterial({ map: laneTex, roughness: 0.82 });
+    const plainTex = canvasTex(128, 128, (c, w, h) => {
+      c.fillStyle = '#3a3d42'; c.fillRect(0, 0, w, h);
+      for (let i = 0; i < 2500; i++) { const v = 40 + Math.random() * 50; c.fillStyle = `rgba(${v},${v},${v + 4},0.5)`; c.fillRect(Math.random() * w, Math.random() * h, 1.5, 1.5); }
+    }, 2, 2);
+    const plainMat = new THREE.MeshStandardMaterial({ map: plainTex, roughness: 0.85 });
+    const segs = [], xs = [];
+    for (let i = 0; i <= G; i++) for (let j = 0; j <= G; j++) {
+      const x = CX + i * P, z = CZ + j * P;
+      const sq = new THREE.PlaneGeometry(RH * 2, RH * 2); sq.rotateX(-Math.PI / 2); sq.translate(x, 0.03, z); xs.push(sq);
+      if (j < G) { const s = new THREE.PlaneGeometry(RH * 2, segLen); s.rotateX(-Math.PI / 2); s.translate(x, 0.02, z + P / 2); segs.push(s); }
+      if (i < G) { const s = new THREE.PlaneGeometry(RH * 2, segLen); s.rotateX(-Math.PI / 2); s.rotateY(Math.PI / 2); s.translate(x + P / 2, 0.02, z); segs.push(s); }
+    }
+    const roads = new THREE.Mesh(mergeGeometries(segs), laneMat); roads.receiveShadow = true; cruiseG.add(roads);
+    const inter = new THREE.Mesh(mergeGeometries(xs), plainMat); inter.receiveShadow = true; cruiseG.add(inter);
+    // raised sidewalks: one concrete slab per block, plus the outer ring
+    const slabTex = concreteTex.clone(); slabTex.repeat.set((P - 2 * RH) / 2, (P - 2 * RH) / 2); slabTex.needsUpdate = true;
+    const slabMat = new THREE.MeshStandardMaterial({ map: slabTex, roughness: 0.95 });
+    const slabs = [];
+    for (let bi = 0; bi < G; bi++) for (let bj = 0; bj < G; bj++) {
+      const s = new THREE.BoxGeometry(P - 2 * RH, 0.15, P - 2 * RH); s.translate(CX + bi * P + P / 2, 0.075, CZ + bj * P + P / 2); slabs.push(s);
+    }
+    const ringTex = concreteTex.clone(); ringTex.repeat.set(SW / 2, (SPAN + 2 * RH + 2 * SW) / 2); ringTex.needsUpdate = true;
+    const ringMat = new THREE.MeshStandardMaterial({ map: ringTex, roughness: 0.95 });
+    const ring = [];
+    const L = SPAN + 2 * RH + 2 * SW;
+    for (const [cx, cz, rot] of [[CX - RH - SW / 2, CZ + SPAN / 2, 0], [CX + SPAN + RH + SW / 2, CZ + SPAN / 2, 0], [CX + SPAN / 2, CZ - RH - SW / 2, 1], [CX + SPAN / 2, CZ + SPAN + RH + SW / 2, 1]]) {
+      const s = new THREE.BoxGeometry(SW, 0.15, L); if (rot) s.rotateY(Math.PI / 2); s.translate(cx, 0.075, cz); ring.push(s);
+    }
+    const slabM = new THREE.Mesh(mergeGeometries(slabs), slabMat); slabM.receiveShadow = true; cruiseG.add(slabM);
+    const ringM = new THREE.Mesh(mergeGeometries(ring), ringMat); ringM.receiveShadow = true; cruiseG.add(ringM);
+  }
+
+  // zebra crossings on every approach to every intersection
+  const zebraTex = canvasTex(256, 64, (c, w, h) => {
+    c.clearRect(0, 0, w, h);
+    c.fillStyle = 'rgba(240,240,236,0.95)';
+    for (let k = 0; k < 8; k++) c.fillRect(8 + k * 31, 0, 17, h);
+  });
+  zebraTex.colorSpace = THREE.SRGBColorSpace;
+  const zebraMat = new THREE.MeshStandardMaterial({ map: zebraTex, transparent: true, roughness: 0.7, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+  const zebras = [];
+  function zebra(x, z, alongZ) {   // a crossing over a road; alongZ: the road runs along z
+    const g = new THREE.PlaneGeometry(RH * 2 - 0.6, 3.2); g.rotateX(-Math.PI / 2);
+    if (!alongZ) g.rotateY(Math.PI / 2);
+    g.translate(x, 0.05, z); zebras.push(g);
+  }
+  for (let i = 0; i <= G; i++) for (let j = 0; j <= G; j++) {
+    const x = CX + i * P, z = CZ + j * P, o = RH + 2.2;
+    if (j > 0) zebra(x, z - o, true); if (j < G) zebra(x, z + o, true);
+    if (i > 0) zebra(x - o, z, false); if (i < G) zebra(x + o, z, false);
+  }
+  const schoolZ = (SB.z0 + SB.z1) / 2;
+  zebra(CX + 2 * P, schoolZ, true);          // the school crossing in front of the gate
+  cruiseG.add(new THREE.Mesh(mergeGeometries(zebras), zebraMat));
+
+  // street lamps, merged
+  {
+    const lampParts = [], bulbs = [];
+    for (let i = 0; i <= G; i++) for (let j = 0; j < G; j++) for (const [alongZ, side] of [[true, (i + j) % 2 ? 1 : -1], [false, (i + j) % 2 ? -1 : 1]]) {
+      const m = new THREE.Matrix4();
+      const px = alongZ ? CX + i * P + side * (RH + 0.8) : CX + j * P + P / 2;
+      const pz = alongZ ? CZ + j * P + P / 2 : CZ + i * P + side * (RH + 0.8);
+      const rot = alongZ ? (side > 0 ? -Math.PI / 2 : Math.PI / 2) : (side > 0 ? Math.PI : 0);
+      m.makeRotationY(rot).setPosition(px, 0, pz);
+      for (const [geo, x, y, z] of [[poleGeo, 0, 3.5, 0], [armGeo, 0, 6.95, 1.0], [headGeo, 0, 6.85, 2.0]]) lampParts.push(geo.clone().translate(x, y, z).applyMatrix4(m));
+      const b = new THREE.PlaneGeometry(0.4, 0.7); b.rotateX(Math.PI / 2); b.translate(0, 6.75, 2.0); bulbs.push(b.applyMatrix4(m));
+    }
+    const lp = new THREE.Mesh(mergeGeometries(lampParts.map(g => g.index ? g.toNonIndexed() : g)), poleMat); lp.castShadow = true; cruiseG.add(lp);
+    cruiseG.add(new THREE.Mesh(mergeGeometries(bulbs), bulbMat));
+  }
+
+  // canvas helpers for signs
+  function signTex(w, h, draw) { const t = canvasTex(w, h, draw); t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; return t; }
+  function addPanel(tex, w, h, x, y, z, lookX, lookZ, opts = {}) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6, transparent: !!opts.alpha, alphaTest: opts.alpha ? 0.5 : 0, side: opts.double ? THREE.DoubleSide : THREE.FrontSide, emissiveMap: opts.glow ? tex : null, emissive: opts.glow ? 0x555555 : 0x000000 }));
+    m.position.set(x, y, z); m.lookAt(lookX, y, lookZ); m.castShadow = !!opts.shadow; cruiseG.add(m); return m;
+  }
+  const signPoleGeo = new THREE.CylinderGeometry(0.05, 0.05, 2.6, 6);
+  function signPost(x, z, tex, w, h, lookX, lookZ) {
+    const p = new THREE.Mesh(signPoleGeo, poleMat); p.position.set(x, 1.3, z); cruiseG.add(p);
+    addPanel(tex, w, h, x, 2.6 + h / 2 - 0.2, z, lookX, lookZ, { alpha: true, double: true });
+  }
+  // child figure used on the school signs
+  function kids(c, cx, cy, s, col) {
+    c.fillStyle = col;
+    for (const [dx, sc] of [[-0.22, 1], [0.2, 0.82]]) {
+      const x = cx + dx * s, k = s * sc;
+      c.beginPath(); c.arc(x, cy - 0.32 * k, 0.09 * k, 0, Math.PI * 2); c.fill();
+      c.fillRect(x - 0.07 * k, cy - 0.22 * k, 0.14 * k, 0.3 * k);
+      c.lineWidth = 0.05 * k; c.strokeStyle = col; c.lineCap = 'round';
+      c.beginPath(); c.moveTo(x - 0.04 * k, cy + 0.06 * k); c.lineTo(x - 0.12 * k, cy + 0.3 * k); c.moveTo(x + 0.04 * k, cy + 0.06 * k); c.lineTo(x + 0.12 * k, cy + 0.3 * k); c.stroke();
+      c.beginPath(); c.moveTo(x - 0.07 * k, cy - 0.18 * k); c.lineTo(x - 0.17 * k, cy); c.moveTo(x + 0.07 * k, cy - 0.18 * k); c.lineTo(x + 0.17 * k, cy); c.stroke();
+    }
+  }
+  const crossingSign = signTex(256, 256, (c, w) => {
+    c.fillStyle = '#1d5fb4'; c.fillRect(8, 8, w - 16, w - 16); c.strokeStyle = '#fff'; c.lineWidth = 8; c.strokeRect(14, 14, w - 28, w - 28);
+    c.fillStyle = '#fff'; c.beginPath(); c.moveTo(w / 2, 34); c.lineTo(w - 36, w - 40); c.lineTo(36, w - 40); c.closePath(); c.fill();
+    kids(c, w / 2, 168, 150, '#111');
+  });
+  const warnSign = signTex(256, 256, (c, w) => {
+    c.fillStyle = '#c8102e'; c.beginPath(); c.moveTo(w / 2, 8); c.lineTo(w - 6, w - 20); c.lineTo(6, w - 20); c.closePath(); c.fill();
+    c.fillStyle = '#fff'; c.beginPath(); c.moveTo(w / 2, 46); c.lineTo(w - 42, w - 40); c.lineTo(42, w - 40); c.closePath(); c.fill();
+    kids(c, w / 2, 172, 130, '#111');
+  });
+
+  // ---------- School ----------
+  {
+    const wallCol = '#efe3c2';
+    const schoolTex = canvasTex(256, 256, (c, w, h) => {
+      c.fillStyle = wallCol; c.fillRect(0, 0, w, h);
+      c.fillStyle = '#d9792b'; c.fillRect(0, h - 34, w, 16);                  // orange band at each floor
+      c.fillStyle = '#ffffff'; c.fillRect(30, 50, w - 60, 140);              // window frame
+      const g2 = c.createLinearGradient(0, 56, 0, 184); g2.addColorStop(0, '#5e7d96'); g2.addColorStop(1, '#22313f');
+      c.fillStyle = g2; c.fillRect(38, 58, w - 76, 124);
+      c.fillStyle = '#ffffff'; c.fillRect(w / 2 - 3, 58, 6, 124); c.fillRect(38, 104, w - 76, 5);
+      for (let i = 0; i < 800; i++) { c.fillStyle = `rgba(0,0,0,${Math.random() * 0.04})`; c.fillRect(Math.random() * w, Math.random() * h, 3, 3); }
+    });
+    const schoolMat = new THREE.MeshStandardMaterial({ map: schoolTex, roughness: 0.9 });
+    const FT = 3.8;    // one window bay per 3.8 m
+    const fx0 = SB.x1 - 46;              // main building front, facing east to the street at x = 0
+    bake(schoolMat, boxGeo(SB.x0 + 2, fx0, SB.z0 + 2, SB.z1 - 2, FT * 3, FT));
+    bake(roofMat, boxGeo(SB.x0 + 1.6, fx0 + 0.4, SB.z0 + 1.6, SB.z1 - 1.6, 0.6, 100, FT * 3));
+    // red tiled hip roof
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(1, 1, 4, 1), new THREE.MeshStandardMaterial({ color: 0x9c3b26, roughness: 0.8 }));
+    roof.rotation.y = Math.PI / 4; roof.scale.set((fx0 - SB.x0) * 0.72, 3.2, (SB.z1 - SB.z0) * 0.72);
+    roof.position.set((SB.x0 + 2 + fx0) / 2, FT * 3 + 1.9, (SB.z0 + SB.z1) / 2); roof.castShadow = true; cruiseG.add(roof);
+    // entrance + sign
+    const cz = (SB.z0 + SB.z1) / 2;
+    const door = signTex(256, 256, (c, w, h) => { c.fillStyle = '#e9e9e9'; c.fillRect(0, 0, w, h); c.fillStyle = '#3c4a57'; c.fillRect(20, 20, w - 40, h - 20); c.fillStyle = '#9fb8cc'; c.fillRect(34, 34, w / 2 - 44, h - 60); c.fillRect(w / 2 + 10, 34, w / 2 - 44, h - 60); });
+    addPanel(door, 4.4, 3.4, fx0 + 0.04, 1.7, cz, fx0 + 10, cz);
+    const nameTex = signTex(1024, 128, (c, w, h) => {
+      c.fillStyle = '#163d7a'; c.fillRect(0, 0, w, h); c.strokeStyle = '#f3c614'; c.lineWidth = 6; c.strokeRect(6, 6, w - 12, h - 12);
+      c.fillStyle = '#fff'; c.font = 'bold 70px Arial, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('CUMHURİYET İLKOKULU', w / 2, h / 2 + 3);
+    });
+    addPanel(nameTex, 16, 2, fx0 + 0.06, FT + 0.9, cz, fx0 + 10, cz, { glow: true });
+    // schoolyard with a painted court
+    const yardTex = signTex(512, 512, (c, w, h) => {
+      c.fillStyle = '#8d8a83'; c.fillRect(0, 0, w, h);
+      for (let i = 0; i < 4000; i++) { const v = 120 + Math.random() * 40; c.fillStyle = `rgba(${v},${v},${v - 6},0.35)`; c.fillRect(Math.random() * w, Math.random() * h, 2, 2); }
+      c.fillStyle = '#2f7a4f'; c.fillRect(110, 120, 290, 270);
+      c.strokeStyle = '#f5f5f0'; c.lineWidth = 5; c.strokeRect(120, 130, 270, 250); c.beginPath(); c.moveTo(120, 255); c.lineTo(390, 255); c.stroke();
+      c.beginPath(); c.arc(255, 255, 36, 0, Math.PI * 2); c.stroke();
+      c.fillStyle = '#f3c614'; for (let k = 0; k < 10; k++) c.fillRect(20 + k * 46, 450, 30, 30);   // hopscotch squares
+    });
+    const yard = new THREE.Mesh(new THREE.PlaneGeometry(SB.x1 - fx0, SB.z1 - SB.z0), new THREE.MeshStandardMaterial({ map: yardTex, roughness: 0.95 }));
+    yard.rotation.x = -Math.PI / 2; yard.position.set((fx0 + SB.x1) / 2, 0.16, cz); yard.receiveShadow = true; cruiseG.add(yard);
+    // basketball hoops at both ends of the court
+    for (const s of [-1, 1]) {
+      const hz = cz + s * 16, hx = (fx0 + SB.x1) / 2;
+      bake(poleMat, boxGeo(hx - 0.08, hx + 0.08, hz - 0.08 + s * 0.6, hz + 0.08 + s * 0.6, 3.6, 100));
+      bake(chromeMat, boxGeo(hx - 0.9, hx + 0.9, hz - 0.04 + s * 0.5, hz + 0.04 + s * 0.5, 1.1, 100, 2.9));
+    }
+    // fence along the street, with a gate gap facing the crossing
+    const fenceTex = signTex(256, 64, (c, w, h) => {
+      c.clearRect(0, 0, w, h); c.fillStyle = '#2e5e3a';
+      c.fillRect(0, 4, w, 5); c.fillRect(0, h - 10, w, 5);
+      for (let x = 4; x < w; x += 16) c.fillRect(x, 0, 4, h);
+    });
+    fenceTex.wrapS = THREE.RepeatWrapping;
+    const fenceMat = new THREE.MeshStandardMaterial({ map: fenceTex, transparent: true, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.6 });
+    const fx = SB.x1 + 0.2, gate = 5;
+    for (const [a, b] of [[SB.z0, cz - gate], [cz + gate, SB.z1]]) {
+      const len = b - a, t = fenceTex.clone(); t.repeat.set(len / 4, 1); t.needsUpdate = true;
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(len, 1.8), fenceMat.clone()); m.material.map = t;
+      m.position.set(fx, 1.05, (a + b) / 2); m.rotation.y = Math.PI / 2; cruiseG.add(m);
+    }
+    for (const [a, b, z] of [[fx0, SB.x1, SB.z0 - 0.2], [fx0, SB.x1, SB.z1 + 0.2]]) {
+      const len = b - a, t = fenceTex.clone(); t.repeat.set(len / 4, 1); t.needsUpdate = true;
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(len, 1.8), fenceMat.clone()); m.material.map = t;
+      m.position.set((a + b) / 2, 1.05, z); cruiseG.add(m);
+    }
+    // flagpole with the Turkish flag
+    const fpx = SB.x1 - 6, fpz = cz + gate + 4;
+    bake(chromeMat, boxGeo(fpx - 0.07, fpx + 0.07, fpz - 0.07, fpz + 0.07, 10, 100));
+    const flagTex = signTex(300, 200, (c, w, h) => {
+      c.fillStyle = '#e30a17'; c.fillRect(0, 0, w, h);
+      c.fillStyle = '#fff'; c.beginPath(); c.arc(w * 0.375, h / 2, h * 0.25, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#e30a17'; c.beginPath(); c.arc(w * 0.375 + h * 0.0625, h / 2, h * 0.2, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#fff'; c.beginPath();
+      const sx = w * 0.375 + h * 0.333, sy = h / 2, R = h * 0.125;
+      for (let k = 0; k < 10; k++) { const a = Math.PI + k * Math.PI / 5, r = k % 2 ? R * 0.382 : R; c.lineTo(sx + Math.cos(a) * r, sy + Math.sin(a) * r); }
+      c.closePath(); c.fill();
+    });
+    const flag = new THREE.Mesh(new THREE.PlaneGeometry(2.7, 1.8, 12, 1), new THREE.MeshStandardMaterial({ map: flagTex, side: THREE.DoubleSide, roughness: 0.8 }));
+    flag.position.set(fpx, 9, fpz + 1.4); flag.rotation.y = Math.PI / 2; cruiseG.add(flag);
+    // crossing signs on both pavements, warning triangles before it, OKUL painted on the road
+    const sx = CX + 2 * P;
+    signPost(sx - RH - 0.9, schoolZ - 3, crossingSign, 0.9, 0.9, sx - RH - 0.9, schoolZ - 30);
+    signPost(sx + RH + 0.9, schoolZ + 3, crossingSign, 0.9, 0.9, sx + RH + 0.9, schoolZ + 30);
+    signPost(sx - RH - 0.9, schoolZ - 38, warnSign, 1.0, 1.0, sx - RH - 0.9, schoolZ - 80);
+    signPost(sx + RH + 0.9, schoolZ + 38, warnSign, 1.0, 1.0, sx + RH + 0.9, schoolZ + 80);
+    const okulTex = signTex(256, 128, (c, w, h) => { c.clearRect(0, 0, w, h); c.fillStyle = '#f2f2ec'; c.font = 'bold 104px Arial, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('OKUL', w / 2, h / 2 + 6); });
+    const okulMat = new THREE.MeshStandardMaterial({ map: okulTex, transparent: true, depthWrite: false, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -2 });
+    for (const [x, z, flip] of [[sx - 3, schoolZ - 14, 0], [sx + 3, schoolZ + 14, 1]]) {
+      const g = new THREE.PlaneGeometry(4.2, 4.6); g.rotateX(-Math.PI / 2); g.rotateY(flip ? 0 : Math.PI);
+      const m = new THREE.Mesh(g, okulMat); m.position.set(x, 0.05, z); cruiseG.add(m);
+    }
+  }
+
+  // ---------- Onur Tekel, a few buildings after the start on the right ----------
+  {
+    const W = 14, PH = W * 900 / 1600, h = 15;
+    building(SHOP.x1 - 14, SHOP.x1, SHOP.z0, SHOP.z1, h);
+    const tex = new THREE.TextureLoader().load('assets/onur_tekel.jpg');
+    tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    addPanel(tex, W, PH, SHOP.x1 + 0.05, PH / 2 + 0.15, (SHOP.z0 + SHOP.z1) / 2, SHOP.x1 + 10, (SHOP.z0 + SHOP.z1) / 2, { glow: true });
+  }
+  flushBuckets();
+
+  // drivable area: streets and pavements; the inside of each block is solid
+  function cruiseCollide() {
+    const A = RH + SW - 1.1, r = 1.1;
+    const u = S.pos.x - CX, v = S.pos.z - CZ;
+    const bi = Math.floor(u / P), bj = Math.floor(v / P);
+    let hit = false;
+    if (bi >= 0 && bi < G && bj >= 0 && bj < G) {
+      const lu = u - bi * P, lv = v - bj * P;
+      if (lu > A && lu < P - A && lv > A && lv < P - A) {
+        const pl = lu - A, pr = P - A - lu, pb = lv - A, pt = P - A - lv, m = Math.min(pl, pr, pb, pt);
+        if (m === pl) S.pos.x -= pl; else if (m === pr) S.pos.x += pr; else if (m === pb) S.pos.z -= pb; else S.pos.z += pt;
+        hit = true;
+      }
+    }
+    const lo = -(RH + SW) + r, hi = SPAN + RH + SW - r;
+    if (u < lo) { S.pos.x = CX + lo; hit = true; } if (u > hi) { S.pos.x = CX + hi; hit = true; }
+    if (v < lo) { S.pos.z = CZ + lo; hit = true; } if (v > hi) { S.pos.z = CZ + hi; hit = true; }
+    if (hit) S.speed *= 0.6;
+  }
+  function setMode(m) {
+    S.mode = m;
+    for (const o of raceObjs) o.visible = m === 'race';
+    cruiseG.visible = m === 'cruise';
+    try { localStorage.setItem('pistMode', m); } catch (e) {}
+    document.getElementById('times').style.display = m === 'race' ? '' : 'none';
+  }
+
   // ---------- State ----------
   const S = {
     pos: new THREE.Vector3(), heading: 0, speed: 0, steer: 0, idx: 0,
     lap: 1, lapStart: 0, last: null, best: null, half: false,
-    phase: 'garage', countT: 0, camMode: 0, orbit: 0.6
+    phase: 'garage', countT: 0, camMode: 0, orbit: 0.6, mode: 'race'
   };
   try { const b = parseFloat(localStorage.getItem('pistBest')); if (b > 0) S.best = b; } catch (e) {}
 
   function reset() {
+    if (S.mode === 'cruise') {
+      S.pos.set(CX + 2 * P - 3, 0, CZ + 8); S.heading = 0;
+      S.speed = 0; S.steer = 0; S.phase = 'free'; S.countT = -1; S.lastShown = null;
+      $('count').textContent = '';
+      camPos.copy(S.pos).add(new THREE.Vector3(0, 5, -12));
+      return;
+    }
     const i = N - 6;
     S.pos.copy(pts[i]); S.heading = Math.atan2(tans[i].x, tans[i].z);
     S.speed = 0; S.steer = 0; S.idx = i; S.lap = 1; S.half = false; S.last = null;
@@ -867,9 +1189,10 @@ import { Sky } from 'three/addons/objects/Sky.js';
       if (S.countT <= 0.5 && S.phase === 'count') { S.phase = 'race'; S.lapStart = clock; }
     } else if (S.countT > -0.6) { S.countT -= dt; if (S.countT <= -0.6) $('count').textContent = ''; }
 
-    const racing = S.phase === 'race';
-    const near = nearest(S.pos, S.idx);
-    const off = Math.abs(near.lat) > HALF + KERB * 0.6;
+    const cruise = S.mode === 'cruise';
+    const racing = S.phase === 'race' || S.phase === 'free';
+    const near = cruise ? null : nearest(S.pos, S.idx);
+    const off = !cruise && Math.abs(near.lat) > HALF + KERB * 0.6;
     const gas = racing && keys.gas, brake = racing && keys.brake;
 
     // longitudinal
@@ -895,6 +1218,8 @@ import { Sky } from 'three/addons/objects/Sky.js';
     S.pos.x += Math.sin(S.heading) * S.speed * dt;
     S.pos.z += Math.cos(S.heading) * S.speed * dt;
 
+    if (cruise) cruiseCollide();
+    else {
     // soft outer limit: push back towards track
     const n2 = nearest(S.pos, near.i);
     const LIM = CURB + WALK - 0.8;   // buildings line the street, so the sidewalk is the limit
@@ -918,6 +1243,7 @@ import { Sky } from 'three/addons/objects/Sky.js';
         S.lap++;
       }
       S.lapStart = clock; S.half = false;
+    }
     }
 
     // HUD
@@ -975,6 +1301,8 @@ import { Sky } from 'three/addons/objects/Sky.js';
   const muteBtn = document.getElementById('mute');
   muteBtn.addEventListener('click', () => { initAudio(); setMute(!A.muted); muteBtn.blur(); });
   setMute(A.muted);
+  let startMode = 'race'; try { if (localStorage.getItem('pistMode') === 'cruise') startMode = 'cruise'; } catch (e) {}
+  setMode(startMode);
   reset();
   camera.position.copy(camPos); camera.lookAt(S.pos);
   let ready = false;
@@ -1011,6 +1339,7 @@ import { Sky } from 'three/addons/objects/Sky.js';
       });
       document.getElementById('gColor').addEventListener('input', e => setPaintHex(parseInt(e.target.value.slice(1), 16)));
       document.getElementById('gStart').addEventListener('click', startRace);
+      document.querySelectorAll('#gMode button').forEach(b => b.addEventListener('click', () => { setMode(b.dataset.mode); enterGarage(); }));
     }
     [...cars.children].forEach((b, i) => b.setAttribute('aria-pressed', String(i === carIdx)));
     const hex = paint.color.getHex();
@@ -1019,7 +1348,8 @@ import { Sky } from 'three/addons/objects/Sky.js';
     const ok = !!carCache[CARS[carIdx].id];
     const st = document.getElementById('gStart');
     st.disabled = !ok;
-    st.firstChild.textContent = ok ? 'Yarışa başla ' : 'Araba yükleniyor… ';
+    st.firstChild.textContent = ok ? (S.mode === 'cruise' ? 'Gezintiye başla ' : 'Yarışa başla ') : 'Araba yükleniyor… ';
+    document.querySelectorAll('#gMode button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === S.mode)));
     document.getElementById('gCredit').innerHTML = CARS[carIdx].credit;
   }
 
