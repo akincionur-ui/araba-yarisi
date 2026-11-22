@@ -1,5 +1,5 @@
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pist Prototipi</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -35,6 +35,17 @@
   #center { inset: 0; display: grid; place-items: center; }
   #count { font-family: var(--font-display); font-weight: 700; font-size: clamp(64px, 18vw, 160px); color: var(--accent); text-shadow: 0 4px 24px rgba(0,0,0,0.6); }
   #toast { position: fixed; top: 28%; left: 50%; transform: translateX(-50%); font-family: var(--font-display); font-size: 26px; font-weight: 700; color: var(--good); text-shadow: 0 2px 12px rgba(0,0,0,0.7); pointer-events: none; transition: opacity .4s; }
+  #cruiseHud { top: calc(12px + env(safe-area-inset-top, 0px)); left: max(16px, env(safe-area-inset-left, 0px)); display: grid; gap: 6px; min-width: 190px; }
+  #cruiseHud .row { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+  #cruiseHud .label { color: var(--hud-dim); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; }
+  #cruiseHud .val { font-family: var(--font-display); font-weight: 700; font-size: 16px; }
+  #cruiseHud .pts { font-family: var(--font-display); font-size: 26px; font-weight: 700; color: #4fd67a; transition: color .3s, transform .2s; }
+  #cruiseHud .pts.hit { transform: scale(1.35); }
+  #cruiseHud .limit { width: 34px; height: 34px; border-radius: 50%; background: #fff; border: 4px solid #d01c1c; color: #111; display: grid; place-items: center; font-family: var(--font-display); font-weight: 700; font-size: 13px; box-sizing: border-box; }
+  #over { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(8, 10, 14, 0.6); z-index: 6; }
+  #over[hidden] { display: none; }
+  #over h2 { color: #ff5a4a; }
+  .overtext { color: var(--hud-fg); font-size: 15px; line-height: 1.6; margin: 0 0 6px; }
   #minimap { position: fixed; z-index: 2; pointer-events: none; width: 170px; height: 170px; right: max(16px, env(safe-area-inset-right, 0px)); top: calc(132px + env(safe-area-inset-top, 0px)); }
   @media (pointer: coarse) { #minimap { top: calc(12px + env(safe-area-inset-top, 0px)); width: 120px; height: 120px; } }
   #garage:not([hidden]) ~ #minimap { display: none; }
@@ -134,6 +145,19 @@
   </div>
 </div>
 
+<div id="cruiseHud" class="hud panel" hidden>
+  <div class="row"><span class="label">Ehliyet puanı</span><span class="pts" id="pts">100</span></div>
+  <div class="row"><span class="label">Yol</span><span class="val" id="km">0,0 km</span></div>
+  <div class="row"><span class="label">Hız sınırı</span><span class="limit" id="limit">50</span></div>
+</div>
+<div id="over" hidden>
+  <div class="menu" role="dialog" aria-label="Oyun bitti">
+    <h2>EHLİYETİNE EL KONULDU</h2>
+    <p id="overText" class="overtext"></p>
+    <button id="overRestart" class="primary" type="button">Yeniden başla <kbd>Enter</kbd></button>
+    <button id="overGarage" type="button">Garaja dön</button>
+  </div>
+</div>
 <canvas id="minimap" width="170" height="170" aria-label="Mini harita"></canvas>
 <div id="center" class="hud"><div id="count"></div></div>
 <div id="toast"></div>
@@ -549,7 +573,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
       credit: 'Model: <a href="https://sketchfab.com/3d-models/26ca59b113ae41098402b9931279d5a1" target="_blank" rel="noopener">niev</a>, CC BY 4.0' },
     { id: 'van', name: 'VW T1 Minibüs', vmax: 36, accel: 5, file: 'assets/van.glb.b64.txt', paint: 0x1f9a9e, length: 4.28, flip: false,
       paintMats: ['Body_Bottom1'], chromeMats: [], glassMats: [],
-      credit: 'Model: <a href="https://sketchfab.com/3d-models/718f8f0185bb4ce1b34242796b19418c" target="_blank" rel="noopener">jesseroberts</a>, CC BY 4.0' }
+      credit: 'Model: <a href="https://sketchfab.com/3d-models/718f8f0185bb4ce1b34242796b19418c" target="_blank" rel="noopener">jesseroberts</a>, CC BY 4.0' },
   ];
   PAINTS.push({ name: 'Turuncu', c: 0xc4561d }, { name: 'Turkuaz', c: 0x1f9a9e });
   const rubberMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 });
@@ -765,6 +789,39 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
   keepOut.push([SB.x0, SB.x1, SB.z0, SB.z1]);
   const SHOP = { x1: CX + 2 * P - RH - SW, z0: CZ + 52, z1: CZ + 66 };   // east edge of block (1,0), facing the street x = 0
   keepOut.push([SHOP.x1 - 14, SHOP.x1, SHOP.z0, SHOP.z1]);
+  // ---------- Country road: hills south of the city, the cruise starts here ----------
+  const HW = 7.5;                       // half width of the country road
+  const HWN = 700;
+  const hwCurve = new THREE.CatmullRomCurve3([
+    [0, 470], [-50, 600], [20, 720], [140, 820], [170, 960], [80, 1080], [-90, 1160], [-170, 1290], [-110, 1420], [-20, 1520], [0, CZ - RH - SW - 4]
+  ].map(([x, z]) => new THREE.Vector3(x, 0, z)), false, 'centripetal');
+  const hwPts = hwCurve.getSpacedPoints(HWN - 1);
+  const hilly = (x, z) => 26 * Math.sin(x * 0.0061 + 1.3) * Math.cos(z * 0.0049 - 0.7) + 13 * Math.sin(x * 0.017 + z * 0.011) + 5 * Math.sin(x * 0.043 - z * 0.031) + 14;
+  // road profile: follows the hills gently, flattens into the city
+  {
+    const raw = hwPts.map(p => hilly(p.x, p.z) * 0.55);
+    for (let k = 0; k < HWN; k++) {
+      let sum = 0, n = 0;
+      for (let o = -28; o <= 28; o++) { const q = k + o; if (q >= 0 && q < HWN) { sum += raw[q]; n++; } }
+      const toCity = (HWN - 1 - k) / 120;
+      hwPts[k].y = sum / n * Math.min(1, Math.max(0, toCity - 0.15)) ** 1.5;
+    }
+  }
+  const hwTan = hwPts.map((p, k) => hwPts[Math.min(HWN - 1, k + 1)].clone().sub(hwPts[Math.max(0, k - 1)]).setY(0).normalize());
+  const hwNor = hwTan.map(t => new THREE.Vector3(t.z, 0, -t.x));
+  function hwNearest(pos, hint) {
+    let best = hint, bd = Infinity;
+    const W = hint < 0 ? HWN : 30, from = hint < 0 ? 0 : hint;
+    for (let o = -W; o <= W; o++) {
+      const i = from + o; if (i < 0 || i >= HWN) continue;
+      const dx = hwPts[i].x - pos.x, dz = hwPts[i].z - pos.z, d = dx * dx + dz * dz;
+      if (d < bd) { bd = d; best = i; }
+    }
+    const p = hwPts[best], n = hwNor[best];
+    return { i: best, lat: (pos.x - p.x) * n.x + (pos.z - p.z) * n.z, d: Math.sqrt(bd) };
+  }
+  keepOut.push([-RH - 2, RH + 2, CZ - RH - SW - 40, CZ - RH - SW + 0.1]);   // gap in the outer buildings where the road comes in
+
 
   // blocks: buildings line every street, the courtyard stays hidden behind them
   for (let bi = 0; bi < G; bi++) for (let bj = 0; bj < G; bj++) {
@@ -827,19 +884,104 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
   zebraTex.colorSpace = THREE.SRGBColorSpace;
   const zebraMat = new THREE.MeshStandardMaterial({ map: zebraTex, transparent: true, roughness: 0.7, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
   const zebras = [];
+  // the central junction is a roundabout with the Çinili Vazo fountain on its island
+  const RB = [2, 2], isRB = (i, j) => i === RB[0] && j === RB[1];
+  const RBX = CX + RB[0] * P, RBZ = CZ + RB[1] * P, RB_ISLAND = 6, RB_RING = 9.5, RB_OUT = 14;
   function zebra(x, z, alongZ) {   // a crossing over a road; alongZ: the road runs along z
     const g = new THREE.PlaneGeometry(RH * 2 - 0.6, 3.2); g.rotateX(-Math.PI / 2);
     if (!alongZ) g.rotateY(Math.PI / 2);
     g.translate(x, 0.05, z); zebras.push(g);
   }
   for (let i = 0; i <= G; i++) for (let j = 0; j <= G; j++) {
-    const x = CX + i * P, z = CZ + j * P, o = RH + 2.2;
+    const x = CX + i * P, z = CZ + j * P, o = isRB(i, j) ? RB_OUT + 1.5 : RH + 2.2;
     if (j > 0) zebra(x, z - o, true); if (j < G) zebra(x, z + o, true);
     if (i > 0) zebra(x - o, z, false); if (i < G) zebra(x + o, z, false);
   }
   const schoolZ = (SB.z0 + SB.z1) / 2;
   zebra(CX + 2 * P, schoolZ, true);          // the school crossing in front of the gate
   cruiseG.add(new THREE.Mesh(mergeGeometries(zebras), zebraMat));
+
+
+  // ---------- Roundabout + Çinili Vazo fountain ----------
+  const fountain = { drops: null, n: 0, vel: null, life: null };
+  {
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(13.2, 64).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: asphaltTex, roughness: 0.82, polygonOffset: true, polygonOffsetFactor: -1 }));
+    disc.position.set(RBX, 0.16, RBZ); disc.receiveShadow = true; cruiseG.add(disc);
+    // lane line round the ring
+    const dash = new THREE.Mesh(new THREE.RingGeometry(RB_RING - 0.07, RB_RING + 0.07, 96).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xdedbd2, polygonOffset: true, polygonOffsetFactor: -3 }));
+    dash.position.set(RBX, 0.165, RBZ); cruiseG.add(dash);
+    // red and white curb
+    const curbTex = canvasTex(256, 16, (c, w, h) => { for (let k = 0; k < 16; k++) { c.fillStyle = k % 2 ? '#f2f2ee' : '#c8241e'; c.fillRect(k * 16, 0, 16, h); } });
+    curbTex.repeat.set(3, 1);
+    const curb = new THREE.Mesh(new THREE.CylinderGeometry(RB_ISLAND, RB_ISLAND + 0.1, 0.32, 72, 1, true), new THREE.MeshStandardMaterial({ map: curbTex, roughness: 0.7 }));
+    curb.position.set(RBX, 0.32, RBZ); cruiseG.add(curb);
+    const lawnTex = grassPhoto.clone(); lawnTex.repeat.set(3, 3); lawnTex.needsUpdate = true;
+    const lawn = new THREE.Mesh(new THREE.CircleGeometry(RB_ISLAND, 72).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: lawnTex, color: 0xb8d49a, roughness: 1 }));
+    lawn.position.set(RBX, 0.47, RBZ); lawn.receiveShadow = true; cruiseG.add(lawn);
+    // çini pattern: white glaze, cobalt and turquoise flowers
+    const cini = (w, h, rows) => canvasTex(w, h, (c) => {
+      c.fillStyle = '#f4f1e8'; c.fillRect(0, 0, w, h);
+      const cell = w / 8;
+      for (let r = 0; r < rows; r++) for (let k = 0; k < 8; k++) {
+        const x = k * cell + cell / 2 + (r % 2) * cell / 2, y = (r + 0.5) * h / rows;
+        c.strokeStyle = '#1f4fa8'; c.lineWidth = 2;
+        c.beginPath(); c.moveTo(x - cell / 2, y + h / rows / 2); c.quadraticCurveTo(x, y - h / rows / 3, x + cell / 2, y + h / rows / 2); c.stroke();
+        for (let pIdx = 0; pIdx < 6; pIdx++) {   // tulip-like rosette
+          const a = pIdx / 6 * Math.PI * 2;
+          c.fillStyle = pIdx % 2 ? '#2a9fae' : '#1d47a0';
+          c.beginPath(); c.ellipse(x + Math.cos(a) * cell * 0.17, y + Math.sin(a) * cell * 0.17, cell * 0.14, cell * 0.07, a, 0, Math.PI * 2); c.fill();
+        }
+        c.fillStyle = '#c8302a'; c.beginPath(); c.arc(x, y, cell * 0.07, 0, Math.PI * 2); c.fill();
+      }
+      c.fillStyle = '#1d47a0'; c.fillRect(0, 0, w, 6); c.fillRect(0, h - 6, w, 6);
+    });
+    const basinTex = cini(512, 64, 1); basinTex.repeat.set(4, 1);
+    const stone = new THREE.MeshStandardMaterial({ color: 0xeeeae0, roughness: 0.6 });
+    const basinWall = new THREE.Mesh(new THREE.CylinderGeometry(4.3, 4.4, 0.8, 64, 1, true), new THREE.MeshStandardMaterial({ map: basinTex, roughness: 0.35 }));
+    basinWall.position.set(RBX, 0.87, RBZ); basinWall.castShadow = true; cruiseG.add(basinWall);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(4.35, 0.18, 8, 72).rotateX(Math.PI / 2), stone);
+    rim.position.set(RBX, 1.28, RBZ); cruiseG.add(rim);
+    const water = new THREE.Mesh(new THREE.CircleGeometry(4.25, 64).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x2f8fb0, roughness: 0.08, metalness: 0.3, transparent: true, opacity: 0.85 }));
+    water.position.set(RBX, 1.12, RBZ); cruiseG.add(water);
+    const ped = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.3, 1.3, 32), stone);
+    ped.position.set(RBX, 1.4, RBZ); ped.castShadow = true; cruiseG.add(ped);
+    // the vase: a lathe profile (base, round belly, slim neck, flared lip)
+    const prof = [[0, 0], [1.0, 0], [1.05, 0.25], [0.8, 0.45], [1.25, 1.1], [1.75, 2.0], [1.85, 2.6], [1.6, 3.3], [1.0, 3.9], [0.62, 4.4], [0.55, 5.0], [0.68, 5.5], [0.98, 5.85], [1.02, 5.95], [0.9, 5.95]];
+    const vaseTex = cini(1024, 512, 6); vaseTex.repeat.set(2, 1);
+    const vase = new THREE.Mesh(new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y)), 48), new THREE.MeshStandardMaterial({ map: vaseTex, roughness: 0.22, metalness: 0.05 }));
+    vase.position.set(RBX, 2.05, RBZ); vase.castShadow = true; cruiseG.add(vase);
+    // water jets: points thrown from the lip and from the basin edge
+    const N = 420, posA = new Float32Array(N * 3);
+    fountain.vel = new Float32Array(N * 3); fountain.life = new Float32Array(N); fountain.n = N;
+    const dropTex = canvasTex(32, 32, (c, w) => { const g = c.createRadialGradient(w / 2, w / 2, 0, w / 2, w / 2, w / 2); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = g; c.fillRect(0, 0, w, w); });
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(posA, 3));
+    fountain.drops = new THREE.Points(geo, new THREE.PointsMaterial({ size: 0.22, map: dropTex, color: 0xcfeaff, transparent: true, opacity: 0.8, depthWrite: false }));
+    fountain.drops.frustumCulled = false; cruiseG.add(fountain.drops);
+    for (let i = 0; i < N; i++) fountain.life[i] = -Math.random() * 2;
+  }
+  function fountainStep(dt) {
+    const { drops, vel, life, n } = fountain;
+    if (Math.hypot(S.pos.x - RBX, S.pos.z - RBZ) > 260) return;
+    const pa = drops.geometry.attributes.position.array;
+    for (let i = 0; i < n; i++) {
+      life[i] -= dt;
+      if (life[i] <= 0) {
+        const a = Math.random() * Math.PI * 2;
+        if (i % 3) {   // edge jets arcing into the basin
+          const r = 4.1; pa[i * 3] = RBX + Math.cos(a) * r; pa[i * 3 + 1] = 1.3; pa[i * 3 + 2] = RBZ + Math.sin(a) * r;
+          vel[i * 3] = -Math.cos(a) * 1.4; vel[i * 3 + 1] = 3.6 + Math.random() * 0.5; vel[i * 3 + 2] = -Math.sin(a) * 1.4;
+        } else {         // the vase overflowing
+          pa[i * 3] = RBX + Math.cos(a) * 0.9; pa[i * 3 + 1] = 8.0; pa[i * 3 + 2] = RBZ + Math.sin(a) * 0.9;
+          vel[i * 3] = Math.cos(a) * 1.2; vel[i * 3 + 1] = 1.6 + Math.random(); vel[i * 3 + 2] = Math.sin(a) * 1.2;
+        }
+        life[i] = 1.4 + Math.random() * 0.3;
+      }
+      vel[i * 3 + 1] -= 9.8 * dt;
+      pa[i * 3] += vel[i * 3] * dt; pa[i * 3 + 1] += vel[i * 3 + 1] * dt; pa[i * 3 + 2] += vel[i * 3 + 2] * dt;
+      if (pa[i * 3 + 1] < 1.12) life[i] = 0;
+    }
+    drops.geometry.attributes.position.needsUpdate = true;
+  }
 
   // street lamps, merged
   {
@@ -994,6 +1136,113 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
     tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
     addPanel(tex, W, PH, SHOP.x1 + 0.05, PH / 2 + 0.15, (SHOP.z0 + SHOP.z1) / 2, SHOP.x1 + 10, (SHOP.z0 + SHOP.z1) / 2, { glow: true });
   }
+
+  // country road surface, guardrails, terrain, pines
+  {
+    const pos = [], uv = [], idx = [];
+    let dist = 0;
+    for (let k = 0; k < HWN; k++) {
+      if (k) dist += hwPts[k].distanceTo(hwPts[k - 1]);
+      const p = hwPts[k], n = hwNor[k];
+      pos.push(p.x + n.x * HW, p.y + 0.06, p.z + n.z * HW, p.x - n.x * HW, p.y + 0.06, p.z - n.z * HW);
+      uv.push(0, dist / 14, 1, dist / 14);
+      if (k < HWN - 1) { const j = k * 2; idx.push(j, j + 2, j + 1, j + 1, j + 2, j + 3); }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx); g.computeVertexNormals();
+    const roadM = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map: asphaltTex, roughness: 0.82, side: THREE.DoubleSide }));
+    roadM.receiveShadow = true; cruiseG.add(roadM);
+    // the last few metres over the pavement into the ring road
+    const link = new THREE.Mesh(new THREE.PlaneGeometry(RH * 2, SW + 2).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: asphaltTex, roughness: 0.82 }));
+    link.position.set(CX + 2 * P, 0.17, CZ - RH - SW / 2 - 0.5); link.receiveShadow = true; cruiseG.add(link);
+    // guardrails (stop well before the city)
+    const rails = [], posts = [];
+    for (const side of [-1, 1]) {
+      for (let k = 0; k < HWN - 40; k += 1) {
+        const a = hwPts[k], b = hwPts[k + 1], n = hwNor[k], off = side * (HW + 1.6);
+        const ax = a.x + n.x * off, az = a.z + n.z * off, bx = b.x + hwNor[k + 1].x * off, bz = b.z + hwNor[k + 1].z * off;
+        const len = Math.hypot(bx - ax, bz - az);
+        const r = new THREE.BoxGeometry(0.08, 0.32, len + 0.05);
+        r.applyMatrix4(new THREE.Matrix4().makeRotationY(Math.atan2(bx - ax, bz - az)).setPosition((ax + bx) / 2, (a.y + b.y) / 2 + 0.62, (az + bz) / 2));
+        rails.push(r);
+        if (k % 2 === 0) posts.push(new THREE.BoxGeometry(0.12, 0.75, 0.12).translate(ax, a.y + 0.38, az));
+      }
+    }
+    const railMat = new THREE.MeshStandardMaterial({ color: 0xb9bec4, metalness: 0.7, roughness: 0.35 });
+    const rm = new THREE.Mesh(mergeGeometries(rails.map(x => x.toNonIndexed())), railMat); rm.castShadow = true; cruiseG.add(rm);
+    cruiseG.add(new THREE.Mesh(mergeGeometries(posts.map(x => x.toNonIndexed())), poleMat));
+    // terrain: hills that sink to the road level beside the road and to zero near the city
+    const X0 = -900, X1 = 900, Z0 = 160, Z1 = CZ - 60, STEP = 10;
+    const nx = Math.round((X1 - X0) / STEP), nz = Math.round((Z1 - Z0) / STEP);
+    const tg = new THREE.PlaneGeometry(X1 - X0, Z1 - Z0, nx, nz).rotateX(-Math.PI / 2).translate((X0 + X1) / 2, 0, (Z0 + Z1) / 2);
+    const tp = tg.attributes.position, cols = new Float32Array(tp.count * 3), cc = new THREE.Color();
+    const grassC = new THREE.Color(0x9fb38a), rockC = new THREE.Color(0x8d8476), dryC = new THREE.Color(0xc2b27e);
+    for (let i = 0; i < tp.count; i++) {
+      const x = tp.getX(i), z = tp.getZ(i);
+      let best = 0, bd = Infinity;
+      for (let k = 0; k < HWN; k += 3) { const dx = hwPts[k].x - x, dz = hwPts[k].z - z, d = dx * dx + dz * dz; if (d < bd) { bd = d; best = k; } }
+      const d = Math.sqrt(bd), roadY = hwPts[best].y;
+      const far = THREE.MathUtils.smoothstep(d, HW + 3, HW + 45);
+      let h = THREE.MathUtils.lerp(roadY - 0.25, hilly(x, z) * (0.6 + Math.min(1.6, d / 220)), far);
+      if (d > HW + 3) h *= THREE.MathUtils.smoothstep(Z1 - z, 10, 160);   // flat where it meets the city
+      tp.setY(i, h);
+      const steep = Math.min(1, Math.max(0, (h - 30) / 40));
+      cc.copy(grassC).lerp(dryC, (Math.sin(x * 0.02) * Math.cos(z * 0.017) + 1) * 0.25).lerp(rockC, steep);
+      cols[i * 3] = cc.r; cols[i * 3 + 1] = cc.g; cols[i * 3 + 2] = cc.b;
+    }
+    tg.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+    tg.computeVertexNormals();
+    const tTex = grassPhoto.clone(); tTex.repeat.set(90, 70); tTex.needsUpdate = true;
+    const terrain = new THREE.Mesh(tg, new THREE.MeshStandardMaterial({ map: tTex, vertexColors: true, roughness: 1, polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 2 }));
+    terrain.receiveShadow = true; cruiseG.add(terrain);
+    const terrainY = (x, z) => {   // sample the terrain mesh height (bilinear on the grid)
+      const fx = (x - X0) / STEP, fz = (z - Z0) / STEP, ix = Math.floor(fx), iz = Math.floor(fz);
+      if (ix < 0 || iz < 0 || ix >= nx || iz >= nz) return 0;
+      const at = (a, b) => tp.getY(b * (nx + 1) + a), ux = fx - ix, uz = fz - iz;
+      return (at(ix, iz) * (1 - ux) + at(ix + 1, iz) * ux) * (1 - uz) + (at(ix, iz + 1) * (1 - ux) + at(ix + 1, iz + 1) * ux) * uz;
+    };
+    // pines
+    const TREES = 700;
+    const crown = new THREE.InstancedMesh(new THREE.ConeGeometry(2.2, 7, 7).translate(0, 5.5, 0), new THREE.MeshStandardMaterial({ color: 0x2f5a2c, roughness: 0.9 }), TREES);
+    const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.22, 0.3, 2.4, 5).translate(0, 1.2, 0), new THREE.MeshStandardMaterial({ color: 0x5a4030 }), TREES);
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), pv = new THREE.Vector3(), tc = new THREE.Color();
+    let placed = 0;
+    for (let tries = 0; placed < TREES && tries < 20000; tries++) {
+      const x = X0 + Math.random() * (X1 - X0), z = Z0 + Math.random() * (Z1 - Z0 - 60);
+      if (hwNearest({ x, z }, -1).d < HW + 7) continue;
+      const y = terrainY(x, z); if (y > 60) continue;
+      const s = 0.7 + Math.random() * 0.9;
+      m4.compose(pv.set(x, y - 0.2, z), q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, Math.random() * 6), sc.set(s, s * (0.85 + Math.random() * 0.4), s));
+      crown.setMatrixAt(placed, m4); trunk.setMatrixAt(placed, m4);
+      crown.setColorAt(placed, tc.setHSL(0.3 + Math.random() * 0.06, 0.35, 0.22 + Math.random() * 0.1));
+      placed++;
+    }
+    crown.count = trunk.count = placed; crown.castShadow = true;
+    cruiseG.add(crown, trunk);
+  }
+  // city limit signs: KÜTAHYA on the way in, the crossed-out one on the way out
+  {
+    const mk = out => signTex(512, 300, (c, w, h) => {
+      c.fillStyle = '#fff'; c.fillRect(0, 0, w, h);
+      c.fillStyle = '#0d3b8c'; c.fillRect(10, 10, w - 20, h - 20);
+      c.strokeStyle = '#fff'; c.lineWidth = 6; c.strokeRect(22, 22, w - 44, h - 44);
+      c.fillStyle = '#fff'; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.font = 'bold 92px Arial, sans-serif'; c.fillText('KÜTAHYA', w / 2, 118);
+      c.font = 'bold 30px Arial, sans-serif'; c.fillText('NÜFUS  280.000', w / 2, 200); c.fillText('RAKIM  969', w / 2, 244);
+      if (out) { c.strokeStyle = '#d0141a'; c.lineWidth = 26; c.beginPath(); c.moveTo(40, h - 40); c.lineTo(w - 40, 40); c.stroke(); }
+    });
+    const k = HWN - 70, p = hwPts[k], n = hwNor[k], t = hwTan[k];
+    for (const [side, out] of [[-1, false], [1, true]]) {
+      const x = p.x + n.x * side * (HW + 3), z = p.z + n.z * side * (HW + 3);
+      for (const dx of [-1.3, 1.3]) {
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 3.6, 6), poleMat);
+        pole.position.set(x + t.z * dx * 0, p.y + 1.8, z); pole.position.addScaledVector(n, dx); cruiseG.add(pole);
+      }
+      const facing = out ? 1 : -1;   // inbound traffic moves along +t, so the sign faces -t
+      addPanel(mk(out), 3.6, 2.1, x, p.y + 3.2, z, x + t.x * facing * 10, z + t.z * facing * 10);
+    }
+  }
   flushBuckets();
 
   // drivable area: streets and pavements; the inside of each block is solid
@@ -1011,9 +1260,33 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
       }
     }
     const lo = -(RH + SW) + r, hi = SPAN + RH + SW - r;
-    if (u < lo) { S.pos.x = CX + lo; hit = true; } if (u > hi) { S.pos.x = CX + hi; hit = true; }
-    if (v < lo) { S.pos.z = CZ + lo; hit = true; } if (v > hi) { S.pos.z = CZ + hi; hit = true; }
-    if (hit) S.speed *= 0.6;
+    const south = v < -(RH + SW) - 0.5;   // out on the country road: hwFollow keeps the car on it
+    if (!south) {
+      if (u < lo) { S.pos.x = CX + lo; hit = true; } if (u > hi) { S.pos.x = CX + hi; hit = true; }
+      if (v < lo && Math.abs(u - 2 * P) > RH - 0.5) { S.pos.z = CZ + lo; hit = true; }
+    }
+    if (v > hi) { S.pos.z = CZ + hi; hit = true; }
+    const rx = S.pos.x - RBX, rz = S.pos.z - RBZ, rd = Math.hypot(rx, rz), rmin = RB_ISLAND + 1.2;
+    if (rd < rmin && rd > 0.01) { S.pos.x = RBX + rx / rd * rmin; S.pos.z = RBZ + rz / rd * rmin; hit = true; }
+    if (hit) { if (Math.abs(S.speed) > 4) penalty(5, 'Duvara çarptın', 'wall'); S.speed *= 0.6; }
+  }
+  let hwIdx = -1;
+  function hwFollow(dt) {
+    if (S.pos.z > CZ - RH - SW + 2) { S.pos.y = 0; S.pitch = 0; hwIdx = -1; return; }
+    const nr = hwNearest(S.pos, hwIdx); hwIdx = nr.i;
+    const a = hwPts[nr.i], b = hwPts[Math.min(HWN - 1, nr.i + 1)], c = hwPts[Math.max(0, nr.i - 1)];
+    const seg = Math.max(0.01, Math.hypot(b.x - c.x, b.z - c.z));
+    const slope = (b.y - c.y) / seg;   // rise per metre along the road
+    S.pos.y = a.y;
+    const fwd = Math.sin(S.heading) * hwTan[nr.i].x + Math.cos(S.heading) * hwTan[nr.i].z;   // +1 when driving towards the city
+    S.pitch = -Math.atan(slope * fwd);
+    S.speed -= 9.8 * Math.sin(Math.atan(slope * fwd)) * dt * 0.6;   // hills slow you down or speed you up
+    const LIMW = HW + 1.1;
+    if (Math.abs(nr.lat) > LIMW && S.pos.z < CZ - RH - SW - 3) {
+      S.pos.addScaledVector(hwNor[nr.i], -(Math.abs(nr.lat) - LIMW) * Math.sign(nr.lat));
+      if (Math.abs(S.speed) > 4) penalty(5, 'Bariyere çarptın', 'rail');
+      S.speed *= 0.7;
+    }
   }
   function setMode(m) {
     S.mode = m;
@@ -1022,6 +1295,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
     if (m === 'cruise') CARS.forEach((c, i) => { if (TRAFFIC_IDS.includes(c.id)) ensureModel(i).catch(() => {}); });
     try { localStorage.setItem('pistMode', m); } catch (e) {}
     document.getElementById('times').style.display = m === 'race' ? '' : 'none';
+    document.getElementById('cruiseHud').hidden = m !== 'cruise';
     applyNight();
   }
 
@@ -1036,9 +1310,21 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
   function legPieces(a, b, c) {   // drive from node a to node b, then turn towards node c
     const dAB = [Math.sign(b[0] - a[0]), Math.sign(b[1] - a[1])], dBC = [Math.sign(c[0] - b[0]), Math.sign(c[1] - b[1])];
     const rAB = rightOf(dAB), rBC = rightOf(dBC), A = nodePos(...a), B = nodePos(...b);
-    const p0 = A.clone().add(new THREE.Vector3(dAB[0] * RH + rAB[0] * LANE, 0, dAB[1] * RH + rAB[1] * LANE));
-    const p1 = B.clone().add(new THREE.Vector3(-dAB[0] * RH + rAB[0] * LANE, 0, -dAB[1] * RH + rAB[1] * LANE));
-    const p2 = B.clone().add(new THREE.Vector3(dBC[0] * RH + rBC[0] * LANE, 0, dBC[1] * RH + rBC[1] * LANE));
+    const oA = isRB(...a) ? RB_OUT : RH, oB = isRB(...b) ? RB_OUT : RH;
+    const p0 = A.clone().add(new THREE.Vector3(dAB[0] * oA + rAB[0] * LANE, 0, dAB[1] * oA + rAB[1] * LANE));
+    const p1 = B.clone().add(new THREE.Vector3(-dAB[0] * oB + rAB[0] * LANE, 0, -dAB[1] * oB + rAB[1] * LANE));
+    const p2 = B.clone().add(new THREE.Vector3(dBC[0] * oB + rBC[0] * LANE, 0, dBC[1] * oB + rBC[1] * LANE));
+    if (isRB(...b)) {   // anticlockwise round the island (driving on the right), out at the chosen exit
+      const tIn = Math.atan2(-dAB[1] + rAB[1] * 0.35, -dAB[0] + rAB[0] * 0.35);
+      let tOut = Math.atan2(dBC[1] + rBC[1] * 0.35, dBC[0] + rBC[0] * 0.35);
+      while (tOut > tIn - 0.3) tOut -= Math.PI * 2;
+      const ptsR = [p1];
+      const steps = Math.max(2, Math.ceil((tIn - tOut) / 0.35));
+      for (let k = 0; k <= steps; k++) { const th = tIn + (tOut - tIn) * k / steps; ptsR.push(new THREE.Vector3(B.x + Math.cos(th) * RB_RING, 0, B.z + Math.sin(th) * RB_RING)); }
+      ptsR.push(p2);
+      const ringC = new THREE.CatmullRomCurve3(ptsR, false, 'centripetal');
+      return [{ line: [p0, p1], len: p0.distanceTo(p1) }, { curve: ringC, len: ringC.getLength() }];
+    }
     const straight = dAB[0] === dBC[0] && dAB[1] === dBC[1];
     const ctrl = straight ? p1.clone().lerp(p2, 0.5) : B.clone().add(new THREE.Vector3((rAB[0] + rBC[0]) * LANE, 0, (rAB[1] + rBC[1]) * LANE));
     const turn = new THREE.QuadraticBezierCurve3(p1, ctrl, p2);
@@ -1150,13 +1436,13 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
     for (const t of traffic) {
       tmpV.copy(S.pos).sub(t.pos); tmpV.y = 0;
       const d = tmpV.length();
-      if (d < 3.6 && d > 0.01) { S.pos.addScaledVector(tmpV, (3.6 - d) / d); S.speed *= 0.4; }
+      if (d < 3.6 && d > 0.01) { if (Math.abs(S.speed) > 1.5) penalty(15, 'Arabaya çarptın', 'car'); S.pos.addScaledVector(tmpV, (3.6 - d) / d); S.speed *= 0.4; }
     }
   }
 
   // ---------- Traffic lights: every junction with three or more roads ----------
   const LCYCLE = 26;
-  const hasLight = (i, j) => ((i > 0) + (i < G) + (j > 0) + (j < G)) >= 3;
+  const hasLight = (i, j) => !isRB(i, j) && ((i > 0) + (i < G) + (j > 0) + (j < G)) >= 3;
   const lightGroup = (i, j) => (i + j) % 2;
   function lightState(axis, group) {   // axis 'z': traffic moving along z; 'x': along x
     const t = (clock + group * 13) % LCYCLE;
@@ -1226,7 +1512,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
     const key = inside ? i + ',' + j : null;
     if (key && key !== lastJunction && hasLight(i, j) && Math.abs(S.speed) > 3) {
       const axis = Math.abs(Math.sin(S.heading)) > Math.abs(Math.cos(S.heading)) ? 'x' : 'z';
-      if (lightState(axis, lightGroup(i, j)) === 'red') { toast('Kırmızı ışıkta geçtin!'); beep(220, 0.35); }
+      if (lightState(axis, lightGroup(i, j)) === 'red') penalty(20, 'Kırmızı ışıkta geçtin', 'red');
     }
     lastJunction = key;
   }
@@ -1301,7 +1587,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
       const dx = S.pos.x - p.pos.x, dz = S.pos.z - p.pos.z, d = Math.hypot(dx, dz);
       if (d < 2.1 && d > 0.01) {
         S.pos.x += dx / d * (2.1 - d); S.pos.z += dz / d * (2.1 - d);
-        if (Math.abs(S.speed) > 2) toast('Dikkat, yaya!');
+        if (Math.abs(S.speed) > 1) penalty(30, 'Yayaya çarptın', 'ped');
         S.speed *= 0.1;
       }
     }
@@ -1396,9 +1682,14 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
         g.fillStyle = isSchool ? '#7a6a2a' : '#3c434d';
         g.fillRect(X(x1), Z(z1), (x1 - x0) * k, (z1 - z0) * k);
       }
+      g.strokeStyle = '#5a636e'; g.lineWidth = HW * 2 * k; g.lineJoin = 'round'; g.beginPath();
+      for (let i = 0; i < HWN; i += 4) { const q = hwPts[i]; i ? g.lineTo(X(q.x), Z(q.z)) : g.moveTo(X(q.x), Z(q.z)); }
+      g.lineTo(X(CX + 2 * P), Z(CZ)); g.stroke();
       g.fillStyle = '#ffd24a'; g.font = 'bold 10px Inter, sans-serif'; g.textAlign = 'center';
       g.fillText('OKUL', X((SB.x0 + SB.x1) / 2), Z((SB.z0 + SB.z1) / 2) + 3);
       g.fillStyle = '#3d8bff'; g.beginPath(); g.arc(X(SHOP.x1 - 3), Z((SHOP.z0 + SHOP.z1) / 2), 3.5, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#5a636e'; g.lineWidth = 7 * k; g.beginPath(); g.arc(X(RBX), Z(RBZ), RB_RING * k, 0, Math.PI * 2); g.stroke();
+      g.fillStyle = '#3aa0c8'; g.beginPath(); g.arc(X(RBX), Z(RBZ), RB_ISLAND * k, 0, Math.PI * 2); g.fill();
       // traffic lights at junctions
       for (let i = 0; i <= G; i++) for (let j = 0; j <= G; j++) if (hasLight(i, j)) {
         const st = lightState(Math.abs(Math.sin(S.heading)) > Math.abs(Math.cos(S.heading)) ? 'x' : 'z', lightGroup(i, j));
@@ -1421,6 +1712,52 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
     g.strokeStyle = 'rgba(255,255,255,0.35)'; g.lineWidth = 2; g.beginPath(); g.arc(MS / 2, MS / 2, MS / 2 - 2, 0, Math.PI * 2); g.stroke();
   }
 
+
+  // ---------- Cruise rules: a driving-licence score ----------
+  const R = { pts: 100, dist: 0, clean: 0, overT: 0, last: {}, t0: 0, log: {} };
+  let bestKm = 0; try { bestKm = parseFloat(localStorage.getItem('pistBestKm')) || 0; } catch (e) {}
+  function resetRules() { R.pts = 100; R.dist = 0; R.clean = 0; R.overT = 0; R.last = {}; R.t0 = clock; R.log = {}; updateRulesHud(); }
+  function updateRulesHud() {
+    const el = $('pts'); el.textContent = Math.max(0, Math.round(R.pts));
+    el.style.color = R.pts > 60 ? '#4fd67a' : R.pts > 30 ? '#ffcc33' : '#ff5a4a';
+    $('km').textContent = (R.dist / 1000).toFixed(1).replace('.', ',') + ' km';
+  }
+  function penalty(n, why, kind) {
+    if (S.phase !== 'free') return;
+    if (R.last[kind] != null && clock - R.last[kind] < 1.6) return;
+    R.last[kind] = clock;
+    R.pts -= n; R.clean = 0; R.log[why] = (R.log[why] || 0) + 1;
+    toastBad(`−${n}  ${why}`); beep(200, 0.3);
+    const el = $('pts'); el.classList.add('hit'); setTimeout(() => el.classList.remove('hit'), 220);
+    updateRulesHud();
+    if (R.pts <= 0) gameOver();
+  }
+  function speedLimit() {
+    const nearSchool = Math.abs(S.pos.x - (CX + 2 * P)) < RH + SW + 2 && S.pos.z > SB.z0 - 24 && S.pos.z < SB.z1 + 24;
+    if (S.pos.z < CZ - RH - SW - 25) return 110;
+    return nearSchool ? 30 : 50;
+  }
+  function rulesStep(dt) {
+    if (S.phase !== 'free') return;
+    const d = Math.abs(S.speed) * dt;
+    R.dist += d; R.clean += d;
+    if (R.clean >= 1000 && R.pts < 100) { R.clean = 0; R.pts = Math.min(100, R.pts + 5); toast('+5  Kurallara uydun'); }
+    const lim = speedLimit(); $('limit').textContent = lim;
+    if (Math.abs(S.speed) * 3.6 > lim + 5) { R.overT += dt; if (R.overT > 2) { R.overT = -1; penalty(5, 'Hız sınırını aştın', 'speed'); } }
+    else R.overT = Math.min(R.overT, 0) + dt * 0;
+    if (Math.abs(S.speed) * 3.6 <= lim + 5) R.overT = 0;
+    updateRulesHud();
+  }
+  function gameOver() {
+    S.phase = 'over'; S.speed = 0;
+    const km = R.dist / 1000;
+    const isBest = km > bestKm;
+    if (isBest) { bestKm = km; try { localStorage.setItem('pistBestKm', String(km)); } catch (e) {} }
+    const why = Object.entries(R.log).map(([k, v]) => `${k}: ${v}`).join(' · ');
+    $('overText').innerHTML = `Puanın bitti. ${km.toFixed(1).replace('.', ',')} km yol yaptın${isBest ? ' (en iyi!)' : ` (en iyi: ${bestKm.toFixed(1).replace('.', ',')} km)`}.<br>${why}`;
+    $('over').hidden = false;
+  }
+  function restartCruise() { $('over').hidden = true; reset(); }
   // ---------- State ----------
   const S = {
     pos: new THREE.Vector3(), heading: 0, speed: 0, steer: 0, idx: 0,
@@ -1431,10 +1768,11 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
   function reset() {
     if (S.mode === 'cruise') {
-      S.pos.set(CX + 2 * P - 3, 0, CZ + 8); S.heading = 0;
+      { const k = 6, q = hwPts[k], t = hwTan[k]; S.pos.set(q.x, q.y, q.z).addScaledVector(hwNor[k], -3.6); S.heading = Math.atan2(t.x, t.z); hwIdx = -1; }
       S.speed = 0; S.steer = 0; S.phase = 'free'; S.countT = -1; S.lastShown = null;
+      resetRules(); $('over').hidden = true;
       $('count').textContent = '';
-      camPos.copy(S.pos).add(new THREE.Vector3(0, 5, -12));
+      camPos.copy(S.pos).add(new THREE.Vector3(-Math.sin(S.heading) * 12, 5, -Math.cos(S.heading) * 12));
       return;
     }
     const i = N - 6;
@@ -1550,6 +1888,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
   addEventListener('keydown', e => {
     initAudio();
     if (S.phase === 'garage' && (e.code === 'Enter' || e.code === 'NumpadEnter')) { startRace(); e.preventDefault(); return; }
+    if (S.phase === 'over' && (e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'KeyR')) { restartCruise(); e.preventDefault(); return; }
     if (S.phase === 'garage' && (e.code === 'Escape' || e.code === 'KeyP')) return;
     if (e.code === 'Escape' || e.code === 'KeyP') { setPaused(!paused); e.preventDefault(); return; }
     if (e.code === 'KeyM') { setMute(!A.muted); refreshMenu(); }
@@ -1571,6 +1910,8 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
   document.getElementById('mCam').addEventListener('click', cycleCam);
   document.getElementById('mQuality').addEventListener('click', toggleQuality);
   document.getElementById('mNight').addEventListener('click', toggleNight);
+  document.getElementById('overRestart').addEventListener('click', restartCruise);
+  document.getElementById('overGarage').addEventListener('click', () => { $('over').hidden = true; enterGarage(); });
   document.getElementById('mSound').addEventListener('click', () => { initAudio(); setMute(!A.muted); refreshMenu(); if (paused && A.ctx) A.ctx.suspend(); });
   for (const [id, k] of [['tLeft', 'left'], ['tRight', 'right'], ['tGas', 'gas'], ['tBrake', 'brake']]) {
     const b = document.getElementById(id);
@@ -1584,7 +1925,8 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
   const $ = id => document.getElementById(id);
   const fmt = t => { if (t == null) return '–'; const m = Math.floor(t / 60), s = t - m * 60; return `${m}:${s.toFixed(3).padStart(6, '0')}`; };
   let toastTimer;
-  function toast(msg) { const el = $('toast'); el.textContent = msg; el.style.opacity = 1; clearTimeout(toastTimer); toastTimer = setTimeout(() => el.style.opacity = 0, 2200); }
+  function toastBad(msg) { const el = $('toast'); el.textContent = msg; el.style.color = '#ff5a4a'; el.style.opacity = 1; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.style.opacity = 0; el.style.color = ''; }, 2200); }
+  function toast(msg) { $('toast').style.color = ''; const el = $('toast'); el.textContent = msg; el.style.opacity = 1; clearTimeout(toastTimer); toastTimer = setTimeout(() => el.style.opacity = 0, 2200); }
 
   // ---------- Physics ----------
   let MAX_FWD = 75;         // m/s, set per car in the garage
@@ -1595,11 +1937,11 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
   function garageStep(dt) {
     S.orbit += dt * 0.25;
-    car.position.copy(S.pos); car.rotation.y = S.heading; body.rotation.z = 0;
+    car.position.copy(S.pos); car.rotation.order = 'YXZ'; car.rotation.y = S.heading; car.rotation.x = S.pitch || 0; body.rotation.z = 0;
     for (const w of wheels) if (w.front) w.pivot.rotation.y = Math.sin(S.orbit * 0.7) * 0.25;
     const a = S.heading + S.orbit;
-    camera.position.set(S.pos.x + Math.sin(a) * 7.2, 2.4, S.pos.z + Math.cos(a) * 7.2);
-    camera.lookAt(S.pos.x, -0.5, S.pos.z);
+    camera.position.set(S.pos.x + Math.sin(a) * 7.2, S.pos.y + 2.4, S.pos.z + Math.cos(a) * 7.2);
+    camera.lookAt(S.pos.x, S.pos.y - 0.5, S.pos.z);
     camera.fov = 42; camera.updateProjectionMatrix();
     camPos.copy(camera.position);
     sun.position.copy(S.pos).addScaledVector(sunDir, 150);
@@ -1648,8 +1990,9 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
     S.pos.x += Math.sin(S.heading) * S.speed * dt;
     S.pos.z += Math.cos(S.heading) * S.speed * dt;
 
-    if (cruise) { lightsStep(); trafficStep(dt); pedStep(dt); cruiseCollide(); redLightCheck(); }
+    if (cruise) { lightsStep(); fountainStep(dt); trafficStep(dt); pedStep(dt); cruiseCollide(); hwFollow(dt); redLightCheck(); rulesStep(dt); }
     else {
+    S.pos.y = 0; S.pitch = 0;
     // soft outer limit: push back towards track
     const n2 = nearest(S.pos, near.i);
     const LIM = CURB + WALK - 0.8;   // buildings line the street, so the sidewalk is the limit
@@ -1688,7 +2031,9 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
     // car visuals
     car.position.copy(S.pos);
+    car.rotation.order = 'YXZ';
     car.rotation.y = S.heading;
+    car.rotation.x += ((S.pitch || 0) - car.rotation.x) * Math.min(1, dt * 10);
     body.rotation.z = -S.steer * Math.min(1, sp / 30) * 0.05;
     for (const w of wheels) {
       w.spin.rotation.x += (w.sign || 1) * S.speed * dt / 0.34;
@@ -1699,23 +2044,23 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
     const dir = new THREE.Vector3(Math.sin(S.heading), 0, Math.cos(S.heading));
     if (S.camMode === 0) {
       const back = 11 + sp * 0.06;
-      const want = S.pos.clone().addScaledVector(dir, -back).setY(4.2 + sp * 0.02);
+      const want = S.pos.clone().addScaledVector(dir, -back).setY(S.pos.y + 4.2 + sp * 0.02);
       camPos.lerp(want, 1 - Math.exp(-dt * 6));
       camera.position.copy(camPos);
-      camera.lookAt(S.pos.clone().addScaledVector(dir, 5).setY(1.4));
+      camera.lookAt(S.pos.clone().addScaledVector(dir, 5).setY(S.pos.y + 1.4));
       camera.fov = 62 + sp * 0.18;
     } else if (S.camMode === 1) {
-      camera.position.copy(S.pos).addScaledVector(dir, 0.3).setY(1.6);
-      camera.lookAt(S.pos.clone().addScaledVector(dir, 20).setY(1.3));
+      camera.position.copy(S.pos).addScaledVector(dir, 0.3).setY(S.pos.y + 1.6);
+      camera.lookAt(S.pos.clone().addScaledVector(dir, 20).setY(S.pos.y + 1.3 - (S.pitch || 0) * 20));
       camera.fov = 70 + sp * 0.12;
       camPos.copy(camera.position);
     } else {
       // rear three-quarter view, like a showroom photo
       const side = new THREE.Vector3(dir.z, 0, -dir.x);
-      const want = S.pos.clone().addScaledVector(dir, -5.2).addScaledVector(side, -3.6).setY(2.3);
+      const want = S.pos.clone().addScaledVector(dir, -5.2).addScaledVector(side, -3.6).setY(S.pos.y + 2.3);
       camPos.lerp(want, 1 - Math.exp(-dt * 8));
       camera.position.copy(camPos);
-      camera.lookAt(S.pos.clone().addScaledVector(dir, 0.6).setY(0.95));
+      camera.lookAt(S.pos.clone().addScaledVector(dir, 0.6).setY(S.pos.y + 0.95));
       camera.fov = 50;
     }
     camera.updateProjectionMatrix();
