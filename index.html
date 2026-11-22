@@ -35,6 +35,9 @@
   #center { inset: 0; display: grid; place-items: center; }
   #count { font-family: var(--font-display); font-weight: 700; font-size: clamp(64px, 18vw, 160px); color: var(--accent); text-shadow: 0 4px 24px rgba(0,0,0,0.6); }
   #toast { position: fixed; top: 28%; left: 50%; transform: translateX(-50%); font-family: var(--font-display); font-size: 26px; font-weight: 700; color: var(--good); text-shadow: 0 2px 12px rgba(0,0,0,0.7); pointer-events: none; transition: opacity .4s; }
+  #minimap { position: fixed; z-index: 2; pointer-events: none; width: 170px; height: 170px; right: max(16px, env(safe-area-inset-right, 0px)); top: calc(132px + env(safe-area-inset-top, 0px)); }
+  @media (pointer: coarse) { #minimap { top: calc(12px + env(safe-area-inset-top, 0px)); width: 120px; height: 120px; } }
+  #garage:not([hidden]) ~ #minimap { display: none; }
   #help { top: calc(12px + env(safe-area-inset-top, 0px)); right: max(16px, env(safe-area-inset-right, 0px)); font-size: 12px; color: var(--hud-dim); line-height: 1.6; text-align: right; }
   #help b { color: var(--hud-fg); font-weight: 600; }
   #touch { position: fixed; left: 0; right: 0; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(150px, env(safe-area-inset-right, 0px)); display: none; justify-content: space-between; pointer-events: none; }
@@ -93,7 +96,7 @@
   <b>W / ↑</b> gaz · <b>S / ↓</b> fren, geri<br>
   <b>A D / ← →</b> direksiyon · <b>Boşluk</b> el freni<br>
   <b>R</b> yeniden başla · <b>C</b> kamera · <b>B</b> renk<br>
-  <b>Esc / P</b> duraklat
+  <b>N</b> gece/gündüz · <b>Esc / P</b> duraklat
 </div>
 
 <div id="speedo" class="hud panel">
@@ -113,6 +116,7 @@
     <button id="mGarage" type="button"><span>Garaj: araba ve renk</span> <kbd>B renk</kbd></button>
     <button id="mCam" type="button"><span>Kamera: <span id="mCamName">Takip</span></span> <kbd>C</kbd></button>
     <button id="mQuality" type="button"><span id="mQualityName">Grafik: Yüksek</span> <kbd>G</kbd></button>
+    <button id="mNight" type="button"><span id="mNightName">Saat: Gündüz</span> <kbd>N</kbd></button>
     <button id="mSound" type="button"><span id="mSoundName">Ses: açık</span> <kbd>M</kbd></button>
     <p class="credits">Araba modelleri Sketchfab'dan, CC BY 4.0: Ferrari 458 (vicent091036), Dodge Nitro (Carrules501), Opel Corsa ve VW T-Roc (niev), VW T1 Minibüs (jesseroberts). Gökyüzü ışığı ve dokular: Poly Haven ve three.js örnekleri.</p>
   </div>
@@ -130,6 +134,7 @@
   </div>
 </div>
 
+<canvas id="minimap" width="170" height="170" aria-label="Mini harita"></canvas>
 <div id="center" class="hud"><div id="count"></div></div>
 <div id="toast"></div>
 
@@ -180,7 +185,8 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
   sky.material.uniforms.sunPosition.value.copy(sunDir);
   scene.add(sky);
 
-  scene.add(new THREE.HemisphereLight(0xdcefff, 0x4a6b35, 0.4));
+  const hemi = new THREE.HemisphereLight(0xdcefff, 0x4a6b35, 0.4); scene.add(hemi);
+  const lampSpots = { race: [], cruise: [] };   // ground positions under street lamps, lit at night
   const sun = new THREE.DirectionalLight(0xfff0d8, 2.8);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -361,9 +367,9 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
   brickImg.src = 'assets/brick_diffuse.jpg';
   function facadeMat(col, brick) {
     const S2 = 512, c = S2 / 4;
-    const colC = document.createElement('canvas'), rouC = document.createElement('canvas');
-    colC.width = colC.height = rouC.width = rouC.height = S2;
-    const g = colC.getContext('2d'), r = rouC.getContext('2d');
+    const colC = document.createElement('canvas'), rouC = document.createElement('canvas'), emC = document.createElement('canvas');
+    colC.width = colC.height = rouC.width = rouC.height = emC.width = emC.height = S2;
+    const g = colC.getContext('2d'), r = rouC.getContext('2d'), em = emC.getContext('2d');
     const paintWall = () => {
       g.fillStyle = col; g.fillRect(0, 0, S2, S2);
       if (brick && brickImg.naturalWidth) { g.globalAlpha = 0.9; for (let y = 0; y < S2; y += 256) for (let x = 0; x < S2; x += 256) g.drawImage(brickImg, x, y, 256, 256); g.globalAlpha = 1; }
@@ -371,11 +377,16 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
       // rain streaks
       for (let i = 0; i < 40; i++) { g.fillStyle = 'rgba(0,0,0,0.05)'; g.fillRect(Math.random() * S2, Math.random() * S2, 2 + Math.random() * 4, 30 + Math.random() * 120); }
       r.fillStyle = '#e0e0e0'; r.fillRect(0, 0, S2, S2);   // matte wall
+      em.fillStyle = '#000'; em.fillRect(0, 0, S2, S2);
       for (let bx = 0; bx < 4; bx++) for (let fy = 0; fy < 4; fy++) {
         const x = bx * c + c * 0.2, y = fy * c + c * 0.18, ww = c * 0.6, hh = c * 0.62;
         g.fillStyle = 'rgba(30,30,30,0.55)'; g.fillRect(x - 5, y - 5, ww + 10, hh + 14);   // frame + sill shadow
         g.fillStyle = '#d6d2c8'; g.fillRect(x - 6, y + hh + 6, ww + 12, 5);               // sill
         const lit = Math.random() < 0.12;
+        if (lit || Math.random() < 0.3) {   // windows that glow after dark
+          const eg = em.createLinearGradient(x, y, x, y + hh); eg.addColorStop(0, '#ffd99a'); eg.addColorStop(1, '#c98a3c');
+          em.fillStyle = eg; em.fillRect(x, y, ww, hh);
+        }
         const grd = g.createLinearGradient(x, y, x, y + hh);
         grd.addColorStop(0, lit ? '#e8cf96' : '#20272e'); grd.addColorStop(1, lit ? '#b88f50' : '#0d1116');
         g.fillStyle = grd; g.fillRect(x, y, ww, hh);
@@ -384,12 +395,13 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
         r.fillStyle = '#0a0a0a'; r.fillRect(x, y, ww, hh);   // glossy glass reflects the sky
       }
     };
-    const map = new THREE.CanvasTexture(colC), rough = new THREE.CanvasTexture(rouC);
-    for (const t of [map, rough]) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = renderer.capabilities.getMaxAnisotropy(); }
+    const map = new THREE.CanvasTexture(colC), rough = new THREE.CanvasTexture(rouC), emis = new THREE.CanvasTexture(emC);
+    emis.colorSpace = THREE.SRGBColorSpace;
+    for (const t of [map, rough, emis]) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = renderer.capabilities.getMaxAnisotropy(); }
     map.colorSpace = THREE.SRGBColorSpace;
     paintWall();
-    if (brick) brickReady.then(() => { paintWall(); map.needsUpdate = true; rough.needsUpdate = true; });
-    return new THREE.MeshStandardMaterial({ map, roughnessMap: rough, roughness: 1, metalness: 0.05, envMapIntensity: 1.2 });
+    if (brick) brickReady.then(() => { paintWall(); map.needsUpdate = true; rough.needsUpdate = true; emis.needsUpdate = true; });
+    return new THREE.MeshStandardMaterial({ map, roughnessMap: rough, roughness: 1, metalness: 0.05, envMapIntensity: 1.2, emissiveMap: emis, emissive: 0x000000 });
   }
   const facadeMats = facadeColors.map((col, i) => facadeMat(col, i % 3 === 1));
   const roofMat = new THREE.MeshStandardMaterial({ color: 0x55585e });
@@ -479,6 +491,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
     g.position.copy(base);
     g.rotation.y = Math.atan2(-side * nors[i].x, -side * nors[i].z);
     scene.add(g);
+    g.updateMatrixWorld(true); lampSpots.race.push(g.localToWorld(new THREE.Vector3(0, 0, 2.0)));
   }
 
   // Trees: a few between buildings on the sidewalk, more in the parkland beyond the city
@@ -839,6 +852,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
       m.makeRotationY(rot).setPosition(px, 0, pz);
       for (const [geo, x, y, z] of [[poleGeo, 0, 3.5, 0], [armGeo, 0, 6.95, 1.0], [headGeo, 0, 6.85, 2.0]]) lampParts.push(geo.clone().translate(x, y, z).applyMatrix4(m));
       const b = new THREE.PlaneGeometry(0.4, 0.7); b.rotateX(Math.PI / 2); b.translate(0, 6.75, 2.0); bulbs.push(b.applyMatrix4(m));
+      lampSpots.cruise.push(new THREE.Vector3(0, 0, 2.0).applyMatrix4(m));
     }
     const lp = new THREE.Mesh(mergeGeometries(lampParts.map(g => g.index ? g.toNonIndexed() : g)), poleMat); lp.castShadow = true; cruiseG.add(lp);
     cruiseG.add(new THREE.Mesh(mergeGeometries(bulbs), bulbMat));
@@ -1008,6 +1022,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
     if (m === 'cruise') CARS.forEach((c, i) => { if (TRAFFIC_IDS.includes(c.id)) ensureModel(i).catch(() => {}); });
     try { localStorage.setItem('pistMode', m); } catch (e) {}
     document.getElementById('times').style.display = m === 'race' ? '' : 'none';
+    applyNight();
   }
 
 
@@ -1093,6 +1108,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
       const pm = paint.clone(); pm.color.setHex(id === 'crafter' && Math.random() < 0.7 ? 0xe8e8e6 : PAINTS[(Math.random() * PAINTS.length) | 0].c);
       m.traverse(o => { if (o.isMesh && o.material === paint) o.material = pm; });
       t.obj.add(m);
+      t.beam = new THREE.Mesh(beamGeo, beamMat); t.beam.visible = night; t.beam.renderOrder = 3; t.obj.add(t.beam);
     }
   }
   function piecePoint(pc, s, out, tan) {
@@ -1113,6 +1129,8 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
         if (ahead > 0.5 && ahead < 16 && lat < (isPlayer ? 3 : 2.4)) block = Math.min(block, ahead);
       };
       check(S.pos, true);
+      const ls = lightStopDist(t); if (ls < Infinity) block = Math.min(block, ls + 7);
+      for (const p of crossing()) { tmpV.copy(p.pos).sub(t.pos); const ahead = tmpV.dot(t.dir); if (ahead > 0.5 && ahead < 18 && Math.abs(tmpV.x * t.dir.z - tmpV.z * t.dir.x) < 6) block = Math.min(block, ahead); }
       if (t.stuck < 3) for (const o of traffic) if (o !== t) check(o.pos, false);
       const want = block < 7 ? 0 : block < 16 ? t.vmax * (block - 7) / 9 : t.vmax;
       const target = Math.min(want, t.pi === 1 ? 6 : t.vmax);
@@ -1135,6 +1153,274 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
       if (d < 3.6 && d > 0.01) { S.pos.addScaledVector(tmpV, (3.6 - d) / d); S.speed *= 0.4; }
     }
   }
+
+  // ---------- Traffic lights: every junction with three or more roads ----------
+  const LCYCLE = 26;
+  const hasLight = (i, j) => ((i > 0) + (i < G) + (j > 0) + (j < G)) >= 3;
+  const lightGroup = (i, j) => (i + j) % 2;
+  function lightState(axis, group) {   // axis 'z': traffic moving along z; 'x': along x
+    const t = (clock + group * 13) % LCYCLE;
+    if (axis === 'z') return t < 10 ? 'green' : t < 12.5 ? 'yellow' : 'red';
+    return t < 13 ? 'red' : t < 23 ? 'green' : t < 25.5 ? 'yellow' : 'red';
+  }
+  const LIGHT_ON = { red: 0xff2a1a, yellow: 0xffb400, green: 0x2bff6a }, LIGHT_OFF = { red: 0x2a0806, yellow: 0x2a1e04, green: 0x062a10 };
+  const lampMats = {};   // `${group}${axis}${colour}` -> material
+  {
+    const darkParts = [], lamps = {};
+    const lampGeo = new THREE.CircleGeometry(0.13, 14);
+    for (let i = 0; i <= G; i++) for (let j = 0; j <= G; j++) {
+      if (!hasLight(i, j)) continue;
+      const node = nodePos(i, j), grp = lightGroup(i, j);
+      for (const d of DIRS) {
+        const from = [i - d[0], j - d[1]];   // traffic arriving from this neighbour, moving along d
+        if (from[0] < 0 || from[0] > G || from[1] < 0 || from[1] > G) continue;
+        const axis = d[0] !== 0 ? 'x' : 'z', r = rightOf(d);
+        // pole on the right-hand corner before the junction, arm over the right lane
+        const px = node.x - d[0] * (RH + 1.2) + r[0] * (RH + 0.9), pz = node.z - d[1] * (RH + 1.2) + r[1] * (RH + 0.9);
+        const m = new THREE.Matrix4().makeRotationY(Math.atan2(-d[0], -d[1])).setPosition(px, 0, pz);   // local +z faces oncoming traffic
+        const right = new THREE.Vector3(r[0], 0, r[1]);
+        const armLen = RH + 0.9 - LANE;
+        darkParts.push(new THREE.CylinderGeometry(0.08, 0.1, 5.6, 6).translate(0, 2.8, 0).applyMatrix4(m));
+        const arm = new THREE.BoxGeometry(0.1, 0.1, armLen); arm.rotateY(Math.PI / 2);
+        const toLane = new THREE.Vector3(-r[0], 0, -r[1]).multiplyScalar(armLen / 2);
+        darkParts.push(arm.translate(0, 0, 0).applyMatrix4(new THREE.Matrix4().makeRotationY(Math.atan2(-d[0], -d[1]))).translate(px + toLane.x, 5.5, pz + toLane.z));
+        const hx = px - r[0] * armLen, hz = pz - r[1] * armLen;
+        const hm = new THREE.Matrix4().makeRotationY(Math.atan2(-d[0], -d[1])).setPosition(hx, 0, hz);
+        darkParts.push(new THREE.BoxGeometry(0.42, 1.15, 0.3).translate(0, 4.85, 0).applyMatrix4(hm));
+        // a smaller head on the pole for cars right at the stop line
+        darkParts.push(new THREE.BoxGeometry(0.34, 0.95, 0.26).translate(0, 2.9, 0).applyMatrix4(m));
+        [['red', 0.36], ['yellow', 0], ['green', -0.36]].forEach(([c, dy]) => {
+          const k = `${grp}${axis}${c}`;
+          (lamps[k] = lamps[k] || []).push(lampGeo.clone().translate(0, 4.85 + dy, 0.16).applyMatrix4(hm));
+          lamps[k].push(lampGeo.clone().scale(0.8, 0.8, 1).translate(0, 2.9 + dy * 0.8, 0.14).applyMatrix4(m));
+        });
+      }
+    }
+    const dm = new THREE.Mesh(mergeGeometries(darkParts.map(g => g.index ? g.toNonIndexed() : g)), new THREE.MeshStandardMaterial({ color: 0x1b1e22, roughness: 0.6 }));
+    dm.castShadow = true; cruiseG.add(dm);
+    for (const [k, list] of Object.entries(lamps)) {
+      const mat = new THREE.MeshBasicMaterial({ color: LIGHT_OFF[k.slice(2)], toneMapped: false });
+      lampMats[k] = mat; cruiseG.add(new THREE.Mesh(mergeGeometries(list), mat));
+    }
+  }
+  function lightsStep() {
+    for (const grp of [0, 1]) for (const axis of ['x', 'z']) {
+      const st = lightState(axis, grp);
+      for (const c of ['red', 'yellow', 'green']) lampMats[`${grp}${axis}${c}`].color.setHex(st === c ? LIGHT_ON[c] : LIGHT_OFF[c]);
+    }
+  }
+  // distance a traffic car has left before it must stop for the light at the end of its street (Infinity if it may go)
+  function lightStopDist(t) {
+    if (t.pi !== 0 || !hasLight(t.b[0], t.b[1])) return Infinity;
+    const axis = t.b[0] !== t.a[0] ? 'x' : 'z', st = lightState(axis, lightGroup(t.b[0], t.b[1]));
+    const left = t.pieces[0].len - t.s - 4.6;   // stop before the zebra crossing
+    if (left < -0.5) return Infinity;
+    if (st === 'red' || (st === 'yellow' && left > 5)) return Math.max(0, left);
+    return Infinity;
+  }
+  // the player running a red light
+  let lastJunction = null;
+  function redLightCheck() {
+    const i = Math.round((S.pos.x - CX) / P), j = Math.round((S.pos.z - CZ) / P);
+    const inside = i >= 0 && i <= G && j >= 0 && j <= G && Math.abs(S.pos.x - CX - i * P) < RH && Math.abs(S.pos.z - CZ - j * P) < RH;
+    const key = inside ? i + ',' + j : null;
+    if (key && key !== lastJunction && hasLight(i, j) && Math.abs(S.speed) > 3) {
+      const axis = Math.abs(Math.sin(S.heading)) > Math.abs(Math.cos(S.heading)) ? 'x' : 'z';
+      if (lightState(axis, lightGroup(i, j)) === 'red') { toast('Kırmızı ışıkta geçtin!'); beep(220, 0.35); }
+    }
+    lastJunction = key;
+  }
+
+  // ---------- Pedestrians: instanced so 50 people cost a handful of draw calls ----------
+  const PED_MAX = 60;
+  const pedParts = {
+    torso: new THREE.InstancedMesh(new THREE.BoxGeometry(0.44, 0.62, 0.24), new THREE.MeshStandardMaterial({ roughness: 0.85 }), PED_MAX),
+    head: new THREE.InstancedMesh(new THREE.SphereGeometry(0.12, 10, 8), new THREE.MeshStandardMaterial({ roughness: 0.7 }), PED_MAX),
+    hair: new THREE.InstancedMesh(new THREE.SphereGeometry(0.125, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ roughness: 0.9 }), PED_MAX),
+    leg: new THREE.InstancedMesh(new THREE.BoxGeometry(0.16, 0.85, 0.17).translate(0, -0.425, 0), new THREE.MeshStandardMaterial({ roughness: 0.9 }), PED_MAX * 2),
+    arm: new THREE.InstancedMesh(new THREE.BoxGeometry(0.11, 0.6, 0.12).translate(0, -0.3, 0), new THREE.MeshStandardMaterial({ roughness: 0.85 }), PED_MAX * 2),
+    bag: new THREE.InstancedMesh(new THREE.BoxGeometry(0.34, 0.4, 0.14), new THREE.MeshStandardMaterial({ roughness: 0.8 }), PED_MAX)
+  };
+  for (const m of Object.values(pedParts)) { m.castShadow = true; m.count = 0; m.frustumCulled = false; cruiseG.add(m); }
+  const SHIRTS = [0x2f4f7f, 0x7f2f2f, 0x2f6f4f, 0xd9c9a8, 0x444444, 0x8a6d3b, 0xb84a6e, 0x3d7ea6, 0xe0e0dc], PANTS = [0x1d2533, 0x2b2b2b, 0x4a4a52, 0x5a4632, 0x1f3a5f];
+  const SKIN = [0xe0b899, 0xc99a74, 0x9c6b4a, 0xf0cdb0], HAIR = [0x2a1d14, 0x111111, 0x5a3a22, 0x8c6a3c, 0x9a9a9a];
+  const peds = [];
+  const pick = a => a[(Math.random() * a.length) | 0];
+  function addPed(o) {
+    const p = Object.assign({ pos: new THREE.Vector3(), h: 0, phase: Math.random() * 6, speed: 1.3, scale: 1, moving: true }, o);
+    p.shirt = new THREE.Color(o.shirt || pick(SHIRTS)); p.pants = new THREE.Color(o.pants || pick(PANTS));
+    p.skin = new THREE.Color(pick(SKIN)); p.hairC = new THREE.Color(pick(HAIR)); p.bagC = new THREE.Color(o.bag || 0x000000);
+    peds.push(p); return p;
+  }
+  // sidewalk walkers: loop round a block, a little inside the kerb
+  const loopPts = (bi, bj) => { const o = RH + SW * 0.55, x0 = CX + bi * P + o, x1 = CX + (bi + 1) * P - o, z0 = CZ + bj * P + o, z1 = CZ + (bj + 1) * P - o; return [[x0, z0], [x1, z0], [x1, z1], [x0, z1]]; };
+  function loopPos(p) {
+    const pts = p.loop, L = p.perim; let s = ((p.s % L) + L) % L;
+    for (let k = 0; k < 4; k++) {
+      const a = pts[k], b = pts[(k + 1) % 4], len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (s <= len) { const u = s / len; p.pos.set(a[0] + (b[0] - a[0]) * u, 0.15, a[1] + (b[1] - a[1]) * u); p.h = Math.atan2((b[0] - a[0]) * p.dirSign, (b[1] - a[1]) * p.dirSign); return; }
+      s -= len;
+    }
+  }
+  for (let k = 0; k < 34; k++) {
+    const bi = (Math.random() * G) | 0, bj = (Math.random() * G) | 0;
+    const loop = loopPts(bi, bj);
+    const p = addPed({ kind: 'walk', loop, perim: 4 * (P - 2 * (RH + SW * 0.55)), s: Math.random() * 300, dirSign: Math.random() < 0.5 ? 1 : -1, speed: 1.1 + Math.random() * 0.5, scale: 0.92 + Math.random() * 0.14 });
+    loopPos(p);
+  }
+  // school pupils: some crossing at the school zebra, some in the yard
+  const sxRoad = CX + 2 * P;
+  for (let k = 0; k < 4; k++) addPed({ kind: 'cross', scale: 0.68 + Math.random() * 0.08, shirt: 0x1f3f8f, pants: 0x1d2533, bag: pick([0xd23a2a, 0xe8b000, 0x2a7ad2, 0x2f9f5f]), side: k % 2 ? 1 : -1, wait: 1 + k * 1.6 + Math.random() * 3, off: (k - 1.5) * 0.9, speed: 1.15 });
+  for (let k = 0; k < 10; k++) {
+    const p = addPed({ kind: 'yard', scale: 0.66 + Math.random() * 0.1, shirt: 0x1f3f8f, pants: 0x1d2533, bag: 0, speed: 0.6 + Math.random() * 1.6, cx: SB.x1 - 18 + (Math.random() - 0.5) * 16, cz: (SB.z0 + SB.z1) / 2 + (Math.random() - 0.5) * 30, r: 1.5 + Math.random() * 5 });
+    p.a = Math.random() * 6;
+  }
+  for (const p of peds) if (p.kind === 'cross') { p.pos.set(sxRoad + p.side * (RH + 2), 0.15, schoolZ + p.off); p.h = -p.side * Math.PI / 2; p.moving = false; }
+  const crossing = () => peds.filter(p => p.kind === 'cross' && p.moving);
+  function pedStep(dt) {
+    for (const p of peds) {
+      if (p.kind === 'walk') { p.s += p.speed * dt * p.dirSign; loopPos(p); }
+      else if (p.kind === 'yard') { p.a += dt * p.speed / p.r; p.pos.set(p.cx + Math.cos(p.a) * p.r, 0.16, p.cz + Math.sin(p.a) * p.r); p.h = Math.atan2(-Math.sin(p.a), Math.cos(p.a)); }
+      else if (p.kind === 'cross') {
+        if (!p.moving) {
+          p.wait -= dt;
+          // only step out when no car is about to arrive
+          const clear = Math.hypot(S.pos.x - sxRoad, S.pos.z - schoolZ) > 22 || Math.abs(S.speed) < 1;
+          if (p.wait <= 0 && clear) { p.moving = true; p.target = -p.side * (RH + 2); }
+        } else {
+          const dx = p.target - (p.pos.x - sxRoad), step = Math.sign(dx) * p.speed * dt;
+          p.h = Math.sign(dx) > 0 ? Math.PI / 2 : -Math.PI / 2;
+          if (Math.abs(dx) <= Math.abs(step)) { p.pos.x = sxRoad + p.target; p.moving = false; p.side = -p.side; p.wait = 5 + Math.random() * 9; p.h += Math.PI; }
+          else p.pos.x += step;
+        }
+      }
+      if (p.moving) p.phase += dt * p.speed * 5.2 / p.scale;
+    }
+    // bumping into a pedestrian stops the car (and nobody gets hurt)
+    for (const p of peds) {
+      const dx = S.pos.x - p.pos.x, dz = S.pos.z - p.pos.z, d = Math.hypot(dx, dz);
+      if (d < 2.1 && d > 0.01) {
+        S.pos.x += dx / d * (2.1 - d); S.pos.z += dz / d * (2.1 - d);
+        if (Math.abs(S.speed) > 2) toast('Dikkat, yaya!');
+        S.speed *= 0.1;
+      }
+    }
+    drawPeds();
+  }
+  const pm4 = new THREE.Matrix4(), pq = new THREE.Quaternion(), pv = new THREE.Vector3(), ps = new THREE.Vector3(), base4 = new THREE.Matrix4(), part4 = new THREE.Matrix4(), rot4 = new THREE.Matrix4(), black = new THREE.Color(0);
+  function drawPeds() {
+    let nb = 0;
+    peds.forEach((p, i) => {
+      base4.compose(p.pos, pq.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, p.h), ps.setScalar(p.scale));
+      const sw = p.moving ? Math.sin(p.phase) * 0.55 : 0, bob = p.moving ? Math.abs(Math.cos(p.phase)) * 0.03 : 0;
+      const put = (mesh, idx, x, y, z, rx, col) => {
+        part4.makeTranslation(x, y + bob, z); if (rx) part4.multiply(rot4.makeRotationX(rx));
+        mesh.setMatrixAt(idx, pm4.multiplyMatrices(base4, part4)); mesh.setColorAt(idx, col);
+      };
+      put(pedParts.torso, i, 0, 1.17, 0, 0, p.shirt);
+      put(pedParts.head, i, 0, 1.62, 0, 0, p.skin);
+      put(pedParts.hair, i, 0, 1.64, -0.01, 0, p.hairC);
+      put(pedParts.leg, i * 2, -0.11, 0.87, 0, sw, p.pants); put(pedParts.leg, i * 2 + 1, 0.11, 0.87, 0, -sw, p.pants);
+      put(pedParts.arm, i * 2, -0.29, 1.45, 0, -sw * 0.8, p.shirt); put(pedParts.arm, i * 2 + 1, 0.29, 1.45, 0, sw * 0.8, p.shirt);
+      if (p.bagC.getHex()) put(pedParts.bag, nb++, 0, 1.2, -0.2, 0, p.bagC);
+    });
+    for (const k of ['torso', 'head', 'hair']) pedParts[k].count = peds.length;
+    pedParts.leg.count = pedParts.arm.count = peds.length * 2; pedParts.bag.count = nb;
+    for (const m of Object.values(pedParts)) { m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
+  }
+  drawPeds();
+
+  // ---------- Night ----------
+  function glowTex(stops, w = 128, h = 128, shape = 'round') {
+    const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d');
+    const gr = shape === 'round' ? g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2) : g.createLinearGradient(0, h, 0, 0);
+    stops.forEach(([o, col]) => gr.addColorStop(o, col));
+    g.fillStyle = gr;
+    if (shape === 'round') g.fillRect(0, 0, w, h);
+    else { g.beginPath(); g.moveTo(w * 0.38, h); g.lineTo(w * 0.62, h); g.lineTo(w, 0); g.lineTo(0, 0); g.closePath(); g.fill(); }
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+  }
+  const poolMat = new THREE.MeshBasicMaterial({ map: glowTex([[0, 'rgba(255,214,150,0.55)'], [0.5, 'rgba(255,190,110,0.22)'], [1, 'rgba(255,170,90,0)']]), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -4 });
+  const pools = {};
+  for (const k of ['race', 'cruise']) {
+    const list = lampSpots[k].map(v => new THREE.PlaneGeometry(15, 15).rotateX(-Math.PI / 2).translate(v.x, 0.2, v.z));
+    pools[k] = new THREE.Mesh(mergeGeometries(list), poolMat); pools[k].visible = false; pools[k].renderOrder = 3; scene.add(pools[k]);
+  }
+  const beamMat = new THREE.MeshBasicMaterial({ map: glowTex([[0, 'rgba(255,245,220,0.5)'], [0.6, 'rgba(255,240,210,0.15)'], [1, 'rgba(255,240,210,0)']], 64, 128, 'beam'), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -4 });
+  const beamGeo = new THREE.PlaneGeometry(7, 16).rotateX(-Math.PI / 2).rotateY(Math.PI).translate(0, 0.22, 9.5);
+  const headSpot = new THREE.SpotLight(0xfff2dc, 900, 80, 0.5, 0.55, 1.6);
+  headSpot.position.set(0, 0.9, 1.9); headSpot.target.position.set(0, 0, 22); headSpot.visible = false;
+  car.add(headSpot, headSpot.target);
+  const playerBeam = new THREE.Mesh(beamGeo, beamMat); playerBeam.visible = false; playerBeam.renderOrder = 3; car.add(playerBeam);
+  let night = false;
+  try { night = localStorage.getItem('pistNight') === '1'; } catch (e) {}
+  let savedEnv = null;
+  function applyNight() {
+    const n = night;
+    sky.visible = !n;
+    scene.background = n ? new THREE.Color(0x0a1020) : null;
+    scene.fog.color.setHex(n ? 0x0a1020 : HAZE);
+    hemi.intensity = n ? 0.32 : 0.4;
+    hemi.color.setHex(n ? 0x8fa6d8 : 0xdcefff);
+    sun.intensity = n ? 0.8 : 2.8;
+    sun.color.setHex(n ? 0x9fb6ff : 0xfff0d8);
+    if (n && scene.environment) { savedEnv = scene.environment; scene.environment = null; }
+    if (!n && savedEnv) { scene.environment = savedEnv; savedEnv = null; }
+    for (const m of facadeMats) m.emissive.setHex(n ? 0xffffff : 0x000000);
+    headSpot.visible = playerBeam.visible = n;
+    for (const t of traffic) if (t.beam) t.beam.visible = n;
+    pools.race.visible = n && S.mode === 'race'; pools.cruise.visible = n && S.mode === 'cruise';
+    const el = document.getElementById('mNightName'); if (el) el.textContent = n ? 'Saat: Gece' : 'Saat: Gündüz';
+  }
+  function toggleNight() { night = !night; try { localStorage.setItem('pistNight', night ? '1' : '0'); } catch (e) {} applyNight(); }
+
+  // ---------- Minimap ----------
+  const mini = document.getElementById('minimap'), mctx = mini.getContext('2d');
+  const MS = mini.width;
+  let miniTick = 0;
+  function drawMinimap() {
+    if (++miniTick % 2) return;
+    const g = mctx; g.clearRect(0, 0, MS, MS);
+    g.save(); g.beginPath(); g.arc(MS / 2, MS / 2, MS / 2 - 2, 0, Math.PI * 2); g.clip();
+    g.fillStyle = 'rgba(12,16,22,0.82)'; g.fillRect(0, 0, MS, MS);
+    let k, cx0, cz0;
+    // map with +z up, so screen right is world -x (matches driving on the right)
+    if (S.mode === 'cruise') { k = MS / 190; cx0 = S.pos.x; cz0 = S.pos.z; }
+    else { k = MS / 520; cx0 = 20; cz0 = 100; }
+    const X = x => MS / 2 - (x - cx0) * k, Z = z => MS / 2 - (z - cz0) * k;
+    if (S.mode === 'cruise') {
+      g.fillStyle = '#3c434d';
+      for (let bi = 0; bi < G; bi++) for (let bj = 0; bj < G; bj++) {
+        const x0 = CX + bi * P + RH, x1 = CX + (bi + 1) * P - RH, z0 = CZ + bj * P + RH, z1 = CZ + (bj + 1) * P - RH;
+        const isSchool = bi === 1 && bj === 1;
+        g.fillStyle = isSchool ? '#7a6a2a' : '#3c434d';
+        g.fillRect(X(x1), Z(z1), (x1 - x0) * k, (z1 - z0) * k);
+      }
+      g.fillStyle = '#ffd24a'; g.font = 'bold 10px Inter, sans-serif'; g.textAlign = 'center';
+      g.fillText('OKUL', X((SB.x0 + SB.x1) / 2), Z((SB.z0 + SB.z1) / 2) + 3);
+      g.fillStyle = '#3d8bff'; g.beginPath(); g.arc(X(SHOP.x1 - 3), Z((SHOP.z0 + SHOP.z1) / 2), 3.5, 0, Math.PI * 2); g.fill();
+      // traffic lights at junctions
+      for (let i = 0; i <= G; i++) for (let j = 0; j <= G; j++) if (hasLight(i, j)) {
+        const st = lightState(Math.abs(Math.sin(S.heading)) > Math.abs(Math.cos(S.heading)) ? 'x' : 'z', lightGroup(i, j));
+        g.fillStyle = st === 'green' ? '#2bd65a' : st === 'yellow' ? '#ffb400' : '#ff3b2a';
+        g.beginPath(); g.arc(X(CX + i * P), Z(CZ + j * P), 2.2, 0, Math.PI * 2); g.fill();
+      }
+      g.fillStyle = '#e8e8e8';
+      for (const t of traffic) { g.beginPath(); g.arc(X(t.pos.x), Z(t.pos.z), 2.4, 0, Math.PI * 2); g.fill(); }
+    } else {
+      g.strokeStyle = '#8a929c'; g.lineWidth = 3; g.beginPath();
+      for (let i = 0; i <= N; i += 4) { const q = pts[i % N]; i ? g.lineTo(X(q.x), Z(q.z)) : g.moveTo(X(q.x), Z(q.z)); }
+      g.stroke();
+      g.strokeStyle = '#fff'; g.lineWidth = 2; const s0 = pts[0], n0 = nors[0];
+      g.beginPath(); g.moveTo(X(s0.x + n0.x * 9), Z(s0.z + n0.z * 9)); g.lineTo(X(s0.x - n0.x * 9), Z(s0.z - n0.z * 9)); g.stroke();
+    }
+    // player arrow
+    g.save(); g.translate(X(S.pos.x), Z(S.pos.z)); g.rotate(-S.heading + Math.PI);
+    g.fillStyle = '#ffcc33'; g.beginPath(); g.moveTo(0, 7); g.lineTo(5, -5); g.lineTo(0, -2); g.lineTo(-5, -5); g.closePath(); g.fill();
+    g.restore(); g.restore();
+    g.strokeStyle = 'rgba(255,255,255,0.35)'; g.lineWidth = 2; g.beginPath(); g.arc(MS / 2, MS / 2, MS / 2 - 2, 0, Math.PI * 2); g.stroke();
+  }
+
   // ---------- State ----------
   const S = {
     pos: new THREE.Vector3(), heading: 0, speed: 0, steer: 0, idx: 0,
@@ -1271,6 +1557,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
     if (e.code === 'KeyC') cycleCam();
     if (e.code === 'KeyB') { nextPaint(); refreshMenu(); }
     if (e.code === 'KeyG') toggleQuality();
+    if (e.code === 'KeyN') toggleNight();
     if (paused) return;
     if (map[e.code]) { keys[map[e.code]] = true; e.preventDefault(); }
   });
@@ -1283,6 +1570,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
   document.getElementById('mGarage').addEventListener('click', () => { setPaused(false); enterGarage(); });
   document.getElementById('mCam').addEventListener('click', cycleCam);
   document.getElementById('mQuality').addEventListener('click', toggleQuality);
+  document.getElementById('mNight').addEventListener('click', toggleNight);
   document.getElementById('mSound').addEventListener('click', () => { initAudio(); setMute(!A.muted); refreshMenu(); if (paused && A.ctx) A.ctx.suspend(); });
   for (const [id, k] of [['tLeft', 'left'], ['tRight', 'right'], ['tGas', 'gas'], ['tBrake', 'brake']]) {
     const b = document.getElementById(id);
@@ -1360,7 +1648,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
     S.pos.x += Math.sin(S.heading) * S.speed * dt;
     S.pos.z += Math.cos(S.heading) * S.speed * dt;
 
-    if (cruise) { trafficStep(dt); cruiseCollide(); }
+    if (cruise) { lightsStep(); trafficStep(dt); pedStep(dt); cruiseCollide(); redLightCheck(); }
     else {
     // soft outer limit: push back towards track
     const n2 = nearest(S.pos, near.i);
@@ -1394,6 +1682,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
     $('last').textContent = fmt(S.last);
     $('best').textContent = fmt(S.best);
     $('speed').textContent = Math.round(Math.abs(S.speed) * 3.6);
+    drawMinimap();
     $('offroad').textContent = off ? 'Pist dışı' : '';
     audioUpdate(off, gas, racing);
 
