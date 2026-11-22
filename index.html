@@ -114,7 +114,7 @@
     <button id="mCam" type="button"><span>Kamera: <span id="mCamName">Takip</span></span> <kbd>C</kbd></button>
     <button id="mQuality" type="button"><span id="mQualityName">Grafik: Yüksek</span> <kbd>G</kbd></button>
     <button id="mSound" type="button"><span id="mSoundName">Ses: açık</span> <kbd>M</kbd></button>
-    <p class="credits">Araba modelleri Sketchfab'dan, CC BY 4.0: Ferrari 458 (vicent091036), Dodge Nitro (Carrules501), Opel Corsa (niev). Gökyüzü ışığı ve dokular: Poly Haven ve three.js örnekleri.</p>
+    <p class="credits">Araba modelleri Sketchfab'dan, CC BY 4.0: Ferrari 458 (vicent091036), Dodge Nitro (Carrules501), Opel Corsa ve VW T-Roc (niev). Gökyüzü ışığı ve dokular: Poly Haven ve three.js örnekleri.</p>
   </div>
 </div>
 
@@ -530,8 +530,13 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
       credit: 'Model: <a href="https://sketchfab.com/3d-models/325e81d33e7f4a20a41306187ad20710" target="_blank" rel="noopener">Carrules501</a>, CC BY 4.0' },
     { id: 'corsa', name: 'Opel Corsa 2011', vmax: 50, accel: 7.5, file: 'assets/corsa.glb.b64.txt', paint: 0x7d7468, length: 4.0, flip: false, rotX: -Math.PI / 2,
       paintMats: ['carpaint'], chromeMats: ['chrome'], glassMats: ['windowglass', 'clearglass'], wheelMats: ['tire', 'material', 'brakedisk'],
-      credit: 'Model: <a href="https://sketchfab.com/3d-models/015352c125cf43a88d3e6c6def277b9a" target="_blank" rel="noopener">niev</a>, CC BY 4.0' }
+      credit: 'Model: <a href="https://sketchfab.com/3d-models/015352c125cf43a88d3e6c6def277b9a" target="_blank" rel="noopener">niev</a>, CC BY 4.0' },
+    { id: 'troc', name: 'Volkswagen T-Roc', vmax: 58, accel: 9, file: 'assets/troc.glb.b64.txt', paint: 0xc4561d, length: 4.23, flip: false,
+      paintMats: ['Matte__FF808_MARBLE'], chromeMats: ['Matte__FFFFF.000_CHROME'], glassMats: ['vidros__spec_GLASS'], blackMats: ['Material'],
+      credit: 'Model: <a href="https://sketchfab.com/3d-models/26ca59b113ae41098402b9931279d5a1" target="_blank" rel="noopener">niev</a>, CC BY 4.0' }
   ];
+  PAINTS.push({ name: 'Turuncu', c: 0xc4561d });
+  const rubberMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 });
   const paint = new THREE.MeshPhysicalMaterial({ color: PAINTS[0].c, metalness: 0.6, roughness: 0.35, clearcoat: 1, clearcoatRoughness: 0.03 });
   const detailMat = new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 1, roughness: 0.35 });
   const chromeMat = new THREE.MeshStandardMaterial({ color: 0xf2f3f5, metalness: 1, roughness: 0.12 });
@@ -583,10 +588,12 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
     flipG.add(model); wrap.add(flipG);
     model.traverse(o => {
       if (!o.isMesh) return;
+      if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals();
       const n = o.material && o.material.name;
       if (cfg.paintMats.includes(n)) o.material = paint;
       else if (cfg.chromeMats.includes(n)) o.material = chromeMat;
       else if (cfg.glassMats.includes(n)) o.material = glassMat;
+      else if (cfg.blackMats && cfg.blackMats.includes(n)) o.material = rubberMat;
       else if (o.material) { o.material.envMapIntensity = 0.8; if (o.material.metalness === undefined) o.material.metalness = 0; }
     });
     flipG.rotation.set(cfg.rotX || 0, cfg.flip ? Math.PI : 0, 0, 'YXZ');
@@ -625,12 +632,12 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
   const carCache = {};
   let carIdx = 0, carLoading = null;
-  function loadCar(i) {
+  const modelLoads = {};
+  function ensureModel(i) {
     const cfg = CARS[i];
-    carIdx = i;
-    try { localStorage.setItem('pistCar', cfg.id); } catch (e) {}
-    if (carCache[cfg.id]) { mountCar(cfg.id); return Promise.resolve(); }
-    const p = carLoading = loadB64(cfg.file).then(buf => new Promise((res, rej) => gltfLoader.parse(buf, 'assets/', g => {
+    if (carCache[cfg.id]) return Promise.resolve(carCache[cfg.id]);
+    if (modelLoads[cfg.id]) return modelLoads[cfg.id];
+    return modelLoads[cfg.id] = loadB64(cfg.file).then(buf => new Promise((res, rej) => gltfLoader.parse(buf, 'assets/', g => {
       const model = g.scene.children[0] || g.scene;
       let entry;
       if (cfg.id === 'ferrari') {
@@ -639,9 +646,15 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
         entry = { root, wheels: setupFerrari(model), ao: true };
       } else entry = setupGeneric(g.scene, cfg);
       carCache[cfg.id] = entry;
-      res();
-    }, rej))).then(() => { if (carIdx === i) mountCar(cfg.id); });
-    return p;
+      res(entry);
+    }, rej))).catch(e => { delete modelLoads[cfg.id]; throw e; });
+  }
+  function loadCar(i) {
+    const cfg = CARS[i];
+    carIdx = i;
+    try { localStorage.setItem('pistCar', cfg.id); } catch (e) {}
+    if (carCache[cfg.id]) { mountCar(cfg.id); return Promise.resolve(); }
+    return carLoading = ensureModel(i).then(() => { if (carIdx === i) mountCar(cfg.id); });
   }
   function mountCar(id) {
     const cfg = CARS.find(c => c.id === id);
@@ -989,10 +1002,136 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
     S.mode = m;
     for (const o of raceObjs) o.visible = m === 'race';
     cruiseG.visible = m === 'cruise';
+    if (m === 'cruise') CARS.forEach((c, i) => { if (TRAFFIC_IDS.includes(c.id)) ensureModel(i).catch(() => {}); });
     try { localStorage.setItem('pistMode', m); } catch (e) {}
     document.getElementById('times').style.display = m === 'race' ? '' : 'none';
   }
 
+
+  // ---------- Cruise traffic: cars drive the right-hand lane, turn at junctions, stop for whatever is ahead ----------
+  const trafficG = new THREE.Group(); cruiseG.add(trafficG);
+  const LANE = 3;
+  const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  const nodePos = (i, j) => new THREE.Vector3(CX + i * P, 0, CZ + j * P);
+  const rightOf = d => [-d[1], d[0]];
+  const traffic = [];
+  function legPieces(a, b, c) {   // drive from node a to node b, then turn towards node c
+    const dAB = [Math.sign(b[0] - a[0]), Math.sign(b[1] - a[1])], dBC = [Math.sign(c[0] - b[0]), Math.sign(c[1] - b[1])];
+    const rAB = rightOf(dAB), rBC = rightOf(dBC), A = nodePos(...a), B = nodePos(...b);
+    const p0 = A.clone().add(new THREE.Vector3(dAB[0] * RH + rAB[0] * LANE, 0, dAB[1] * RH + rAB[1] * LANE));
+    const p1 = B.clone().add(new THREE.Vector3(-dAB[0] * RH + rAB[0] * LANE, 0, -dAB[1] * RH + rAB[1] * LANE));
+    const p2 = B.clone().add(new THREE.Vector3(dBC[0] * RH + rBC[0] * LANE, 0, dBC[1] * RH + rBC[1] * LANE));
+    const straight = dAB[0] === dBC[0] && dAB[1] === dBC[1];
+    const ctrl = straight ? p1.clone().lerp(p2, 0.5) : B.clone().add(new THREE.Vector3((rAB[0] + rBC[0]) * LANE, 0, (rAB[1] + rBC[1]) * LANE));
+    const turn = new THREE.QuadraticBezierCurve3(p1, ctrl, p2);
+    return [{ line: [p0, p1], len: p0.distanceTo(p1) }, { curve: turn, len: turn.getLength() }];
+  }
+  function nextNode(prev, cur) {
+    const opts = DIRS.map(d => [cur[0] + d[0], cur[1] + d[1]]).filter(n => n[0] >= 0 && n[0] <= G && n[1] >= 0 && n[1] <= G && !(n[0] === prev[0] && n[1] === prev[1]));
+    const straight = opts.find(n => n[0] - cur[0] === cur[0] - prev[0] && n[1] - cur[1] === cur[1] - prev[1]);
+    if (straight && Math.random() < 0.5) return straight;
+    return opts[(Math.random() * opts.length) | 0];
+  }
+  function startLeg(t) { t.pieces = legPieces(t.a, t.b, t.c); t.pi = 0; t.s = 0; }
+  function spawnTraffic(count) {
+    const used = new Set();
+    for (let k = 0; k < count; k++) {
+      let a, b, key, tries = 0;
+      do {
+        a = [(Math.random() * (G + 1)) | 0, (Math.random() * (G + 1)) | 0];
+        const d = DIRS[(Math.random() * 4) | 0]; b = [a[0] + d[0], a[1] + d[1]];
+        key = a + '>' + b;
+      } while ((b[0] < 0 || b[0] > G || b[1] < 0 || b[1] > G || used.has(key) || (a[0] === 2 && a[1] === 0)) && ++tries < 50);
+      used.add(key);
+      const t = { a, b, c: null, v: 0, vmax: 9 + Math.random() * 4, stuck: 0, obj: new THREE.Group(), pos: new THREE.Vector3(), dir: new THREE.Vector3(0, 0, 1) };
+      t.c = nextNode(a, b); startLeg(t); t.s = Math.random() * t.pieces[0].len * 0.8;
+      trafficG.add(t.obj); traffic.push(t);
+    }
+  }
+  const liteMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.2 });
+  function liteModel(entry) {   // traffic copy: paint, glass and everything else merged into three meshes
+    if (entry.lite) return entry.lite;
+    entry.root.updateMatrixWorld(true);
+    const inv = entry.root.matrixWorld.clone().invert(), parts = { paint: [], glass: [], rest: [] }, col = new THREE.Color();
+    entry.root.traverse(o => {
+      if (!o.isMesh || !o.visible) return;
+      let g = o.geometry.clone().applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld));
+      g = g.index ? g.toNonIndexed() : g;
+      if (!g.attributes.normal) g.computeVertexNormals();
+      const f32 = a => { const out = new Float32Array(a.count * 3); for (let i = 0; i < a.count; i++) { out[i * 3] = a.getX(i); out[i * 3 + 1] = a.getY(i); out[i * 3 + 2] = a.getZ(i); } return new THREE.BufferAttribute(out, 3); };
+      const clean = new THREE.BufferGeometry();
+      clean.setAttribute('position', f32(g.attributes.position)); clean.setAttribute('normal', f32(g.attributes.normal));
+      g = clean;
+      const mat = Array.isArray(o.material) ? o.material[0] : o.material;
+      const kind = mat === paint ? 'paint' : (mat === glassMat || mat.transparent) ? 'glass' : 'rest';
+      if (kind === 'rest') {
+        col.copy(mat.color || col.set(0x333333));
+        const c = new Float32Array(g.attributes.position.count * 3);
+        for (let i = 0; i < c.length; i += 3) { c[i] = col.r; c[i + 1] = col.g; c[i + 2] = col.b; }
+        g.setAttribute('color', new THREE.BufferAttribute(c, 3));
+      }
+      parts[kind].push(g);
+    });
+    const grp = new THREE.Group();
+    if (parts.paint.length) { const m = new THREE.Mesh(mergeGeometries(parts.paint), paint); m.userData.paint = true; grp.add(m); }
+    if (parts.glass.length) grp.add(new THREE.Mesh(mergeGeometries(parts.glass), glassMat));
+    if (parts.rest.length) grp.add(new THREE.Mesh(mergeGeometries(parts.rest), liteMat));
+    grp.traverse(o => { if (o.isMesh) o.castShadow = true; });
+    return entry.lite = grp;
+  }
+  const TRAFFIC_IDS = ['troc', 'corsa', 'nitro'];
+  function dressTraffic() {   // give each traffic car a model as soon as one is loaded; own paint per car
+    for (const t of traffic) {
+      if (t.obj.children.length) continue;
+      const ids = TRAFFIC_IDS.filter(id => carCache[id]);
+      if (!ids.length) return;
+      const id = ids[(Math.random() * ids.length) | 0];
+      const m = liteModel(carCache[id]).clone(true);
+      const pm = paint.clone(); pm.color.setHex(id === 'crafter' && Math.random() < 0.7 ? 0xe8e8e6 : PAINTS[(Math.random() * PAINTS.length) | 0].c);
+      m.traverse(o => { if (o.isMesh && o.userData.paint) o.material = pm; });
+      t.obj.add(m);
+    }
+  }
+  function piecePoint(pc, s, out, tan) {
+    if (pc.line) { const u = Math.min(1, s / pc.len); out.copy(pc.line[0]).lerp(pc.line[1], u); tan.copy(pc.line[1]).sub(pc.line[0]).normalize(); }
+    else { const u = Math.min(1, s / pc.len); pc.curve.getPoint(u, out); pc.curve.getTangent(u, tan); }
+  }
+  const tmpV = new THREE.Vector3();
+  function trafficStep(dt) {
+    if (!traffic.length) spawnTraffic(9);
+    dressTraffic();
+    const others = traffic.map(t => t.pos);
+    for (const t of traffic) {
+      // look ahead: the player or another car in our path makes us brake
+      let block = Infinity;
+      const check = (p, isPlayer) => {
+        tmpV.copy(p).sub(t.pos);
+        const ahead = tmpV.dot(t.dir), lat = Math.abs(tmpV.x * t.dir.z - tmpV.z * t.dir.x);
+        if (ahead > 0.5 && ahead < 16 && lat < (isPlayer ? 3 : 2.4)) block = Math.min(block, ahead);
+      };
+      check(S.pos, true);
+      if (t.stuck < 3) for (const o of traffic) if (o !== t) check(o.pos, false);
+      const want = block < 7 ? 0 : block < 16 ? t.vmax * (block - 7) / 9 : t.vmax;
+      const target = Math.min(want, t.pi === 1 ? 6 : t.vmax);
+      t.v += Math.max(-12 * dt, Math.min(4 * dt, target - t.v));
+      t.stuck = t.v < 0.3 ? t.stuck + dt : 0;
+      if (t.stuck > 4.5) t.stuck = 0;
+      t.s += t.v * dt;
+      while (t.s > t.pieces[t.pi].len) {
+        t.s -= t.pieces[t.pi].len; t.pi++;
+        if (t.pi >= t.pieces.length) { t.a = t.b; t.b = t.c; t.c = nextNode(t.a, t.b); startLeg(t); }
+      }
+      piecePoint(t.pieces[t.pi], t.s, t.pos, t.dir);
+      t.obj.position.copy(t.pos);
+      t.obj.rotation.y = Math.atan2(t.dir.x, t.dir.z);
+    }
+    // bumping into traffic
+    for (const t of traffic) {
+      tmpV.copy(S.pos).sub(t.pos); tmpV.y = 0;
+      const d = tmpV.length();
+      if (d < 3.6 && d > 0.01) { S.pos.addScaledVector(tmpV, (3.6 - d) / d); S.speed *= 0.4; }
+    }
+  }
   // ---------- State ----------
   const S = {
     pos: new THREE.Vector3(), heading: 0, speed: 0, steer: 0, idx: 0,
@@ -1218,7 +1357,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
     S.pos.x += Math.sin(S.heading) * S.speed * dt;
     S.pos.z += Math.cos(S.heading) * S.speed * dt;
 
-    if (cruise) cruiseCollide();
+    if (cruise) { trafficStep(dt); cruiseCollide(); }
     else {
     // soft outer limit: push back towards track
     const n2 = nearest(S.pos, near.i);
