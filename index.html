@@ -52,6 +52,24 @@
   .menu button.primary { background: var(--accent); color: #1a1405; border-color: transparent; }
   .menu .credits { margin: 6px 0 0; font-size: 11px; line-height: 1.5; color: var(--hud-dim); }
   .menu .credits a { color: var(--hud-dim); }
+  #garage { position: fixed; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; padding: 0 max(16px, env(safe-area-inset-right, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); z-index: 4; pointer-events: none; }
+  .gpanel { pointer-events: auto; width: min(620px, 100%); background: rgba(14, 18, 25, 0.88); border: 1px solid rgba(255,255,255,0.12); border-radius: 14px; padding: 16px; display: grid; gap: 12px; backdrop-filter: blur(6px); }
+  .ghead { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .ghead h2 { margin: 0; font-family: var(--font-display); font-size: 24px; letter-spacing: 0.06em; color: var(--accent); }
+  .gsub { color: var(--hud-dim); font-size: 13px; }
+  .gcars { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+  .gcars button { font-family: var(--font-body); font-size: 14px; font-weight: 600; padding: 12px; border-radius: 9px; border: 1px solid rgba(255,255,255,0.16); background: rgba(255,255,255,0.06); color: var(--hud-fg); cursor: pointer; text-align: left; }
+  .gcars button[aria-pressed="true"] { border-color: var(--accent); background: rgba(255, 204, 51, 0.16); }
+  .gcolors { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .gswatches { display: flex; gap: 8px; flex-wrap: wrap; }
+  .gswatches button { width: 32px; height: 32px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.35); cursor: pointer; padding: 0; }
+  .gswatches button[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+  .gcustom { display: flex; align-items: center; gap: 8px; color: var(--hud-dim); font-size: 13px; }
+  .gcustom input { width: 40px; height: 32px; border: 0; padding: 0; background: none; cursor: pointer; }
+  .gstart { font-family: var(--font-body); font-size: 16px; font-weight: 700; padding: 13px; border-radius: 9px; border: 0; background: var(--accent); color: #1a1405; cursor: pointer; display: flex; justify-content: center; gap: 10px; }
+  .gstart:disabled { opacity: 0.55; cursor: wait; }
+  .gstart kbd { font-family: var(--font-body); font-size: 12px; font-weight: 400; opacity: 0.6; }
+  #gCredit a { color: var(--hud-dim); }
   .menu kbd { font-family: var(--font-body); font-size: 12px; opacity: 0.65; font-weight: 400; }
   @media (pointer: coarse) { #touch { display: flex; } #help { display: none; } }
   @media (max-width: 520px) { #speed { font-size: 34px; } #speedo { bottom: calc(100px + env(safe-area-inset-bottom, 0px)); } }
@@ -87,11 +105,22 @@
     <h2>DURAKLATILDI</h2>
     <button id="mResume" class="primary" type="button">Devam et <kbd>Esc / P</kbd></button>
     <button id="mRestart" type="button">Yeniden başla <kbd>R</kbd></button>
-    <button id="mPaint" type="button"><span>Renk: <span id="mPaintName">Gece siyahı</span></span> <kbd>B</kbd></button>
+    <button id="mGarage" type="button"><span>Garaj: araba ve renk</span> <kbd>B renk</kbd></button>
     <button id="mCam" type="button"><span>Kamera: <span id="mCamName">Takip</span></span> <kbd>C</kbd></button>
     <button id="mQuality" type="button"><span id="mQualityName">Grafik: Yüksek</span> <kbd>G</kbd></button>
     <button id="mSound" type="button"><span id="mSoundName">Ses: açık</span> <kbd>M</kbd></button>
-    <p class="credits">Araba modeli: Ferrari 458 Italia, <a href="https://sketchfab.com/models/57bf6cc56931426e87494f554df1dab6" target="_blank" rel="noopener">vicent091036</a> (CC BY 4.0). Gökyüzü ışığı ve doku: Poly Haven ve three.js örnekleri.</p>
+    <p class="credits">Araba modelleri Sketchfab'dan, CC BY 4.0: Ferrari 458 (vicent091036), Dodge Nitro (Carrules501), Opel Corsa (niev). Gökyüzü ışığı ve dokular: Poly Haven ve three.js örnekleri.</p>
+  </div>
+</div>
+
+<div id="garage" hidden>
+  <div class="gpanel" role="dialog" aria-label="Garaj">
+    <div class="ghead"><h2>GARAJ</h2><span class="gsub">Arabanı ve rengini seç</span></div>
+    <div id="gCars" class="gcars"></div>
+    <div class="gcolors"><div id="gSwatches" class="gswatches"></div>
+      <label class="gcustom">Özel renk <input id="gColor" type="color" value="#b0000a"></label></div>
+    <button id="gStart" class="gstart" type="button">Yarışa başla <kbd>Enter</kbd></button>
+    <p id="gCredit" class="credits"></p>
   </div>
 </div>
 
@@ -453,82 +482,175 @@ import { Sky } from 'three/addons/objects/Sky.js';
     tree(x, z, 0.9 + Math.random() * 0.8, placedT++);
   }
 
-  // ---------- Car: real 3D model (Ferrari 458 Italia by vicent091036, CC BY 4.0) ----------
+  // ---------- Cars: real 3D models, chosen in the garage ----------
   const PAINTS = [
-    { name: 'Yarış kırmızısı', c: 0xb0000a },
-    { name: 'Gece siyahı', c: 0x050608 },
+    { name: 'Kırmızı', c: 0xb0000a },
+    { name: 'Siyah', c: 0x050608 },
     { name: 'Gümüş', c: 0x8c9096 },
+    { name: 'Bronz gri', c: 0x7d7468 },
     { name: 'Lacivert', c: 0x0a1d4a },
     { name: 'Beyaz', c: 0xe8e8e6 },
-    { name: 'Sarı', c: 0xe8b000 }
+    { name: 'Sarı', c: 0xe8b000 },
+    { name: 'Yeşil', c: 0x1f4d2b }
+  ];
+  const CARS = [
+    { id: 'ferrari', name: 'Ferrari 458 Italia', file: 'assets/ferrari.glb.b64.txt', paint: 0xb0000a,
+      credit: 'Model: <a href="https://sketchfab.com/models/57bf6cc56931426e87494f554df1dab6" target="_blank" rel="noopener">vicent091036</a>, CC BY 4.0' },
+    { id: 'nitro', name: 'Dodge Nitro 2008', file: 'assets/nitro.glb.b64.txt', paint: 0x050608, length: 4.58, flip: false,
+      paintMats: ['Color_009'], chromeMats: ['Color_002'], glassMats: ['Translucent_Glass_Gray_1', 'Color_005'],
+      credit: 'Model: <a href="https://sketchfab.com/3d-models/325e81d33e7f4a20a41306187ad20710" target="_blank" rel="noopener">Carrules501</a>, CC BY 4.0' },
+    { id: 'corsa', name: 'Opel Corsa 2011', file: 'assets/corsa.glb.b64.txt', paint: 0x7d7468, length: 4.0, flip: false, rotX: -Math.PI / 2,
+      paintMats: ['carpaint'], chromeMats: ['chrome'], glassMats: ['windowglass', 'clearglass'], wheelMats: ['tire', 'material', 'brakedisk'],
+      credit: 'Model: <a href="https://sketchfab.com/3d-models/015352c125cf43a88d3e6c6def277b9a" target="_blank" rel="noopener">niev</a>, CC BY 4.0' }
   ];
   const paint = new THREE.MeshPhysicalMaterial({ color: PAINTS[0].c, metalness: 0.6, roughness: 0.35, clearcoat: 1, clearcoatRoughness: 0.03 });
   const detailMat = new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 1, roughness: 0.35 });
+  const chromeMat = new THREE.MeshStandardMaterial({ color: 0xf2f3f5, metalness: 1, roughness: 0.12 });
   const glassMat = new THREE.MeshPhysicalMaterial({ color: 0x111418, metalness: 0.2, roughness: 0.02, transparent: true, opacity: 0.55, clearcoat: 1 });
 
   const car = new THREE.Group();
   const body = new THREE.Group();     // rolls with the suspension
   car.add(body);
   scene.add(car);
-  const wheels = [];
+  let wheels = [];
+  let aoShadow = null;
 
   const loadingMgr = new THREE.LoadingManager();
-  const gltfLoader = new GLTFLoader(loadingMgr);
+  const gltfLoader = new GLTFLoader();
   const assetsReady = new Promise(resolve => { loadingMgr.onLoad = resolve; });
   loadingMgr.onProgress = (url, loaded, total) => { $('count').textContent = `Yükleniyor ${Math.round(loaded / total * 100)}%`; };
   loadingMgr.onError = url => { $('count').textContent = 'Yüklenemedi: ' + url.split('/').pop(); };
 
   // Binary assets are published as base64 text files (artifact hosting serves text, not .glb/.hdr)
-  function loadB64(url) {
-    loadingMgr.itemStart(url);
+  function loadB64(url, mgr) {
+    if (mgr) mgr.itemStart(url);
     return fetch(url).then(r => { if (!r.ok) throw new Error(r.status); return r.text(); }).then(t => {
       const bin = atob(t.trim()), out = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+      if (mgr) mgr.itemEnd(url);
       return out.buffer;
-    }).catch(e => { loadingMgr.itemError(url); throw e; });
+    }).catch(e => { if (mgr) mgr.itemError(url); throw e; });
   }
-  loadB64('assets/ferrari.glb.b64.txt').then(buf => gltfLoader.parse(buf, 'assets/', gltf => { onCar(gltf); loadingMgr.itemEnd('assets/ferrari.glb.b64.txt'); },
-    () => loadingMgr.itemError('assets/ferrari.glb.b64.txt')));
-  function onCar(gltf) {
-    const model = gltf.scene.children[0];
+
+  function setupFerrari(model) {
     model.rotation.y = Math.PI;      // model faces -z, the game drives along +z
-    model.traverse(o => {
-      if (!o.isMesh) return;
-      o.castShadow = true;
-      if (o.material && /Body_Color/.test(o.material.name)) o.material = paint;
-    });
+    model.traverse(o => { if (o.isMesh && o.material && /Body_Color/.test(o.material.name)) o.material = paint; });
     for (const n of ['rim_fl', 'rim_fr', 'rim_rr', 'rim_rl', 'trim']) { const o = model.getObjectByName(n); if (o) o.material = detailMat; }
     const g = model.getObjectByName('glass'); if (g) g.material = glassMat;
+    const ws = [];
     for (const [n, front] of [['wheel_fl', true], ['wheel_fr', true], ['wheel_rl', false], ['wheel_rr', false]]) {
       const w = model.getObjectByName(n);
       if (!w) continue;
       w.rotation.order = 'YXZ';      // steer first, then spin around the axle
-      wheels.push({ pivot: w, spin: w, front, sign: -1 });
+      ws.push({ pivot: w, spin: w, front, sign: -1 });
     }
-    body.add(model);
+    return ws;
   }
-  // soft contact shadow baked for this model
+
+  // Generic setup for downloaded models: swap materials, scale to real length, stand on the ground, find the wheels.
+  function setupGeneric(model, cfg) {
+    const wrap = new THREE.Group();
+    const flipG = new THREE.Group();     // keeps the file's own axis conversion intact
+    flipG.add(model); wrap.add(flipG);
+    model.traverse(o => {
+      if (!o.isMesh) return;
+      const n = o.material && o.material.name;
+      if (cfg.paintMats.includes(n)) o.material = paint;
+      else if (cfg.chromeMats.includes(n)) o.material = chromeMat;
+      else if (cfg.glassMats.includes(n)) o.material = glassMat;
+      else if (o.material) { o.material.envMapIntensity = 0.8; if (o.material.metalness === undefined) o.material.metalness = 0; }
+    });
+    flipG.rotation.set(cfg.rotX || 0, cfg.flip ? Math.PI : 0, 0, 'YXZ');
+    wrap.updateMatrixWorld(true);
+    let box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+    const k = cfg.length / Math.max(size.x, size.z);
+    wrap.scale.setScalar(k);
+    wrap.updateMatrixWorld(true);
+    box = new THREE.Box3().setFromObject(wrap);
+    const c = box.getCenter(new THREE.Vector3());
+    wrap.position.set(-c.x, -box.min.y, -c.z);
+    const outer = new THREE.Group(); outer.add(wrap);
+    outer.updateMatrixWorld(true);
+    const ws = [];
+    if (cfg.wheelMats) {
+      const quads = {};
+      outer.traverse(o => {
+        if (!o.isMesh || !cfg.wheelMats.includes(o.material && o.material.name)) return;
+        const b = new THREE.Box3().setFromObject(o), mc = b.getCenter(new THREE.Vector3());
+        const key = (mc.x > 0 ? 'r' : 'l') + (mc.z > 0 ? 'f' : 'b');
+        (quads[key] = quads[key] || []).push({ o, b });
+      });
+      for (const [key, list] of Object.entries(quads)) {
+        const all = new THREE.Box3(); list.forEach(it => all.union(it.b));
+        const pivot = new THREE.Group(); pivot.position.copy(all.getCenter(new THREE.Vector3()));
+        pivot.rotation.order = 'YXZ';
+        outer.add(pivot); pivot.updateMatrixWorld(true);
+        list.forEach(it => pivot.attach(it.o));
+        ws.push({ pivot, spin: pivot, front: key[1] === 'f', sign: 1 });
+      }
+    }
+    outer.traverse(o => { if (o.isMesh) o.castShadow = true; });
+    return { root: outer, wheels: ws };
+  }
+
+  const carCache = {};
+  let carIdx = 0, carLoading = null;
+  function loadCar(i) {
+    const cfg = CARS[i];
+    carIdx = i;
+    try { localStorage.setItem('pistCar', cfg.id); } catch (e) {}
+    if (carCache[cfg.id]) { mountCar(cfg.id); return Promise.resolve(); }
+    const p = carLoading = loadB64(cfg.file).then(buf => new Promise((res, rej) => gltfLoader.parse(buf, 'assets/', g => {
+      const model = g.scene.children[0] || g.scene;
+      let entry;
+      if (cfg.id === 'ferrari') {
+        model.traverse(o => { if (o.isMesh) o.castShadow = true; });
+        const root = new THREE.Group(); root.add(model);
+        entry = { root, wheels: setupFerrari(model), ao: true };
+      } else entry = setupGeneric(g.scene, cfg);
+      carCache[cfg.id] = entry;
+      res();
+    }, rej))).then(() => { if (carIdx === i) mountCar(cfg.id); });
+    return p;
+  }
+  function mountCar(id) {
+    while (body.children.length) body.remove(body.children[0]);
+    const e = carCache[id];
+    body.add(e.root);
+    wheels = e.wheels;
+    if (aoShadow) aoShadow.visible = !!e.ao;
+  }
+
+  // soft contact shadow baked for the Ferrari model
   new THREE.TextureLoader(loadingMgr).load('assets/ferrari_ao.png', tex => {
-    const shadow = new THREE.Mesh(new THREE.PlaneGeometry(0.655 * 4, 1.3 * 4),
+    aoShadow = new THREE.Mesh(new THREE.PlaneGeometry(0.655 * 4, 1.3 * 4),
       new THREE.MeshBasicMaterial({ map: tex, blending: THREE.MultiplyBlending, toneMapped: false, transparent: true, depthWrite: false }));
-    shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.1; shadow.renderOrder = 2;
-    car.add(shadow);
+    aoShadow.rotation.x = -Math.PI / 2; aoShadow.position.y = 0.1; aoShadow.renderOrder = 2;
+    aoShadow.visible = CARS[carIdx].id === 'ferrari';
+    car.add(aoShadow);
   });
   // image-based lighting from a real photographed sky (Poly Haven, CC0)
-  loadB64('assets/sky.hdr.b64.txt').then(buf => {
+  loadB64('assets/sky.hdr.b64.txt', loadingMgr).then(buf => {
     const d = new RGBELoader().parse(buf);
     const hdr = new THREE.DataTexture(d.data, d.width, d.height, THREE.RGBAFormat, d.type);
     hdr.colorSpace = THREE.LinearSRGBColorSpace; hdr.flipY = true;
     hdr.minFilter = hdr.magFilter = THREE.LinearFilter; hdr.generateMipmaps = false;
     hdr.mapping = THREE.EquirectangularReflectionMapping; hdr.needsUpdate = true;
     scene.environment = hdr;
-    loadingMgr.itemEnd('assets/sky.hdr.b64.txt');
   }).catch(() => {});
 
   let paintIdx = 0;
+  function setPaintHex(hex) {
+    paint.color.setHex(hex);
+    try { localStorage.setItem('pistPaint', String(hex)); } catch (e) {}
+    const i = PAINTS.findIndex(p => p.c === hex);
+    if (i >= 0) paintIdx = i;
+    if (typeof refreshGarage === 'function') refreshGarage();
+  }
   function nextPaint() {
     paintIdx = (paintIdx + 1) % PAINTS.length;
-    paint.color.setHex(PAINTS[paintIdx].c);
+    setPaintHex(PAINTS[paintIdx].c);
     toast('Renk: ' + PAINTS[paintIdx].name);
   }
 
@@ -536,7 +658,7 @@ import { Sky } from 'three/addons/objects/Sky.js';
   const S = {
     pos: new THREE.Vector3(), heading: 0, speed: 0, steer: 0, idx: 0,
     lap: 1, lapStart: 0, last: null, best: null, half: false,
-    phase: 'count', countT: 0, camMode: 0
+    phase: 'garage', countT: 0, camMode: 0, orbit: 0.6
   };
   try { const b = parseFloat(localStorage.getItem('pistBest')); if (b > 0) S.best = b; } catch (e) {}
 
@@ -625,7 +747,6 @@ import { Sky } from 'three/addons/objects/Sky.js';
     else document.activeElement && document.activeElement.blur && document.activeElement.blur();
   }
   function refreshMenu() {
-    document.getElementById('mPaintName').textContent = PAINTS[paintIdx].name;
     document.getElementById('mCamName').textContent = CAMS[S.camMode];
     document.getElementById('mSoundName').textContent = A.muted ? 'Ses: kapalı' : 'Ses: açık';
   }
@@ -654,9 +775,11 @@ import { Sky } from 'three/addons/objects/Sky.js';
   function cycleCam() { S.camMode = (S.camMode + 1) % CAMS.length; refreshMenu(); if (!paused) toast('Kamera: ' + CAMS[S.camMode]); }
   addEventListener('keydown', e => {
     initAudio();
+    if (S.phase === 'garage' && (e.code === 'Enter' || e.code === 'NumpadEnter')) { startRace(); e.preventDefault(); return; }
+    if (S.phase === 'garage' && (e.code === 'Escape' || e.code === 'KeyP')) return;
     if (e.code === 'Escape' || e.code === 'KeyP') { setPaused(!paused); e.preventDefault(); return; }
     if (e.code === 'KeyM') { setMute(!A.muted); refreshMenu(); }
-    if (e.code === 'KeyR') { reset(); if (paused) setPaused(false); }
+    if (e.code === 'KeyR' && S.phase !== 'garage') { reset(); if (paused) setPaused(false); }
     if (e.code === 'KeyC') cycleCam();
     if (e.code === 'KeyB') { nextPaint(); refreshMenu(); }
     if (e.code === 'KeyG') toggleQuality();
@@ -669,7 +792,7 @@ import { Sky } from 'three/addons/objects/Sky.js';
   document.getElementById('pauseBtn').addEventListener('click', () => { initAudio(); setPaused(true); });
   document.getElementById('mResume').addEventListener('click', () => setPaused(false));
   document.getElementById('mRestart').addEventListener('click', () => { reset(); setPaused(false); });
-  document.getElementById('mPaint').addEventListener('click', () => { nextPaint(); refreshMenu(); });
+  document.getElementById('mGarage').addEventListener('click', () => { setPaused(false); enterGarage(); });
   document.getElementById('mCam').addEventListener('click', cycleCam);
   document.getElementById('mQuality').addEventListener('click', toggleQuality);
   document.getElementById('mSound').addEventListener('click', () => { initAudio(); setMute(!A.muted); refreshMenu(); if (paused && A.ctx) A.ctx.suspend(); });
@@ -693,7 +816,22 @@ import { Sky } from 'three/addons/objects/Sky.js';
   const ACCEL = 14, BRAKE = 30, DRAG = 0.012, ROLL = 2.2;
   let clock = 0;
 
+  function garageStep(dt) {
+    S.orbit += dt * 0.25;
+    car.position.copy(S.pos); car.rotation.y = S.heading; body.rotation.z = 0;
+    for (const w of wheels) if (w.front) w.pivot.rotation.y = Math.sin(S.orbit * 0.7) * 0.25;
+    const a = S.heading + S.orbit;
+    camera.position.set(S.pos.x + Math.sin(a) * 7.2, 2.4, S.pos.z + Math.cos(a) * 7.2);
+    camera.lookAt(S.pos.x, -0.5, S.pos.z);
+    camera.fov = 42; camera.updateProjectionMatrix();
+    camPos.copy(camera.position);
+    sun.position.copy(S.pos).addScaledVector(sunDir, 150);
+    sun.target.position.copy(S.pos);
+    if (A.ctx) audioUpdate(false, false, false);
+  }
+
   function step(dt) {
+    if (S.phase === 'garage') { garageStep(dt); return; }
     clock += dt;
     if (S.phase === 'count') {
       S.countT -= dt;
@@ -816,7 +954,58 @@ import { Sky } from 'three/addons/objects/Sky.js';
   camera.position.copy(camPos); camera.lookAt(S.pos);
   let ready = false;
   $('count').textContent = 'Yükleniyor…';
-  assetsReady.then(() => { ready = true; reset(); });
+
+  // ---------- Garage ----------
+  function enterGarage() {
+    reset(); S.phase = 'garage'; S.orbit = 0.6;
+    $('count').textContent = '';
+    $('garage').hidden = false;
+    refreshGarage();
+  }
+  function startRace() {
+    if (!carCache[CARS[carIdx].id]) return;
+    $('garage').hidden = true;
+    initAudio();
+    reset();
+  }
+  function refreshGarage() {
+    const cars = document.getElementById('gCars'), sw = document.getElementById('gSwatches');
+    if (!cars || !sw) return;
+    if (!cars.children.length) {
+      CARS.forEach((c, i) => {
+        const b = document.createElement('button'); b.type = 'button'; b.textContent = c.name;
+        b.addEventListener('click', () => { loadCar(i).then(refreshGarage, () => toast('Araba yüklenemedi')); setPaintHex(c.paint); refreshGarage(); });
+        cars.appendChild(b);
+      });
+      PAINTS.forEach(pt => {
+        const b = document.createElement('button'); b.type = 'button';
+        b.style.background = '#' + pt.c.toString(16).padStart(6, '0');
+        b.setAttribute('aria-label', pt.name); b.title = pt.name;
+        b.addEventListener('click', () => setPaintHex(pt.c));
+        sw.appendChild(b);
+      });
+      document.getElementById('gColor').addEventListener('input', e => setPaintHex(parseInt(e.target.value.slice(1), 16)));
+      document.getElementById('gStart').addEventListener('click', startRace);
+    }
+    [...cars.children].forEach((b, i) => b.setAttribute('aria-pressed', String(i === carIdx)));
+    const hex = paint.color.getHex();
+    [...sw.children].forEach((b, i) => b.setAttribute('aria-pressed', String(PAINTS[i].c === hex)));
+    document.getElementById('gColor').value = '#' + hex.toString(16).padStart(6, '0');
+    const ok = !!carCache[CARS[carIdx].id];
+    const st = document.getElementById('gStart');
+    st.disabled = !ok;
+    st.firstChild.textContent = ok ? 'Yarışa başla ' : 'Araba yükleniyor… ';
+    document.getElementById('gCredit').innerHTML = CARS[carIdx].credit;
+  }
+
+  let startCar = 0, startPaint = null;
+  try {
+    const id = localStorage.getItem('pistCar'); const i = CARS.findIndex(c => c.id === id); if (i >= 0) startCar = i;
+    const pnt = parseInt(localStorage.getItem('pistPaint'), 10); if (!isNaN(pnt)) startPaint = pnt;
+  } catch (e) {}
+  setPaintHex(startPaint != null ? startPaint : CARS[startCar].paint);
+  loadCar(startCar).then(refreshGarage, () => toast('Araba yüklenemedi'));
+  assetsReady.then(() => { ready = true; enterGarage(); });
   let lastT = performance.now();
   function frame(now) {
     const dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
