@@ -114,7 +114,7 @@
     <button id="mCam" type="button"><span>Kamera: <span id="mCamName">Takip</span></span> <kbd>C</kbd></button>
     <button id="mQuality" type="button"><span id="mQualityName">Grafik: Yüksek</span> <kbd>G</kbd></button>
     <button id="mSound" type="button"><span id="mSoundName">Ses: açık</span> <kbd>M</kbd></button>
-    <p class="credits">Araba modelleri Sketchfab'dan, CC BY 4.0: Ferrari 458 (vicent091036), Dodge Nitro (Carrules501), Opel Corsa ve VW T-Roc (niev). Gökyüzü ışığı ve dokular: Poly Haven ve three.js örnekleri.</p>
+    <p class="credits">Araba modelleri Sketchfab'dan, CC BY 4.0: Ferrari 458 (vicent091036), Dodge Nitro (Carrules501), Opel Corsa ve VW T-Roc (niev), VW T1 Minibüs (jesseroberts). Gökyüzü ışığı ve dokular: Poly Haven ve three.js örnekleri.</p>
   </div>
 </div>
 
@@ -533,9 +533,12 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
       credit: 'Model: <a href="https://sketchfab.com/3d-models/015352c125cf43a88d3e6c6def277b9a" target="_blank" rel="noopener">niev</a>, CC BY 4.0' },
     { id: 'troc', name: 'Volkswagen T-Roc', vmax: 58, accel: 9, file: 'assets/troc.glb.b64.txt', paint: 0xc4561d, length: 4.23, flip: false,
       paintMats: ['Matte__FF808_MARBLE'], chromeMats: ['Matte__FFFFF.000_CHROME'], glassMats: ['vidros__spec_GLASS'], blackMats: ['Material'],
-      credit: 'Model: <a href="https://sketchfab.com/3d-models/26ca59b113ae41098402b9931279d5a1" target="_blank" rel="noopener">niev</a>, CC BY 4.0' }
+      credit: 'Model: <a href="https://sketchfab.com/3d-models/26ca59b113ae41098402b9931279d5a1" target="_blank" rel="noopener">niev</a>, CC BY 4.0' },
+    { id: 'van', name: 'VW T1 Minibüs', vmax: 36, accel: 5, file: 'assets/van.glb.b64.txt', paint: 0x1f9a9e, length: 4.28, flip: false,
+      paintMats: ['Body_Bottom1'], chromeMats: [], glassMats: [],
+      credit: 'Model: <a href="https://sketchfab.com/3d-models/718f8f0185bb4ce1b34242796b19418c" target="_blank" rel="noopener">jesseroberts</a>, CC BY 4.0' }
   ];
-  PAINTS.push({ name: 'Turuncu', c: 0xc4561d });
+  PAINTS.push({ name: 'Turuncu', c: 0xc4561d }, { name: 'Turkuaz', c: 0x1f9a9e });
   const rubberMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 });
   const paint = new THREE.MeshPhysicalMaterial({ color: PAINTS[0].c, metalness: 0.6, roughness: 0.35, clearcoat: 1, clearcoatRoughness: 0.03 });
   const detailMat = new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 1, roughness: 0.35 });
@@ -902,7 +905,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
     addPanel(door, 4.4, 3.4, fx0 + 0.04, 1.7, cz, fx0 + 10, cz);
     const nameTex = signTex(1024, 128, (c, w, h) => {
       c.fillStyle = '#163d7a'; c.fillRect(0, 0, w, h); c.strokeStyle = '#f3c614'; c.lineWidth = 6; c.strokeRect(6, 6, w - 12, h - 12);
-      c.fillStyle = '#fff'; c.font = 'bold 70px Arial, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('CUMHURİYET İLKOKULU', w / 2, h / 2 + 3);
+      c.fillStyle = '#fff'; c.font = 'bold 70px Arial, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('FUATPAŞA ORTAOKULU', w / 2, h / 2 + 3);
     });
     addPanel(nameTex, 16, 2, fx0 + 0.06, FT + 0.9, cz, fx0 + 10, cz, { glow: true });
     // schoolyard with a painted court
@@ -1079,16 +1082,16 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
     grp.traverse(o => { if (o.isMesh) o.castShadow = true; });
     return entry.lite = grp;
   }
-  const TRAFFIC_IDS = ['troc', 'corsa', 'nitro'];
+  const TRAFFIC_IDS = ['troc', 'van', 'nitro'];
   function dressTraffic() {   // give each traffic car a model as soon as one is loaded; own paint per car
     for (const t of traffic) {
       if (t.obj.children.length) continue;
       const ids = TRAFFIC_IDS.filter(id => carCache[id]);
       if (!ids.length) return;
       const id = ids[(Math.random() * ids.length) | 0];
-      const m = liteModel(carCache[id]).clone(true);
+      const m = carCache[id].root.clone(true);
       const pm = paint.clone(); pm.color.setHex(id === 'crafter' && Math.random() < 0.7 ? 0xe8e8e6 : PAINTS[(Math.random() * PAINTS.length) | 0].c);
-      m.traverse(o => { if (o.isMesh && o.userData.paint) o.material = pm; });
+      m.traverse(o => { if (o.isMesh && o.material === paint) o.material = pm; });
       t.obj.add(m);
     }
   }
@@ -1098,7 +1101,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
   }
   const tmpV = new THREE.Vector3();
   function trafficStep(dt) {
-    if (!traffic.length) spawnTraffic(9);
+    if (!traffic.length) spawnTraffic(8);
     dressTraffic();
     const others = traffic.map(t => t.pos);
     for (const t of traffic) {
