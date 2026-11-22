@@ -1614,9 +1614,18 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     }
     // bumping into traffic
     for (const t of traffic) {
-      tmpV.copy(S.pos).sub(t.pos); tmpV.y = 0;
-      const d = tmpV.length();
-      if (d < 3.6 && d > 0.01) { if (Math.abs(S.speed) > 1.5) penalty(15, 'Arabaya çarptın', 'car'); S.pos.addScaledVector(tmpV, (3.6 - d) / d); S.speed *= 0.4; }
+      // boxes, not circles: passing alongside with a gap is fine
+      const dx = S.pos.x - t.pos.x, dz = S.pos.z - t.pos.z;
+      const along = dx * t.dir.x + dz * t.dir.z, lat = dx * t.dir.z - dz * t.dir.x;
+      const rel = Math.abs(Math.sin(S.heading - Math.atan2(t.dir.x, t.dir.z)));   // 0 parallel, 1 crossing
+      const hl = 2.2 + THREE.MathUtils.lerp(2.2, 0.95, rel), hw = 0.95 + THREE.MathUtils.lerp(0.9, 2.2, rel);
+      const pa = hl - Math.abs(along), pl = hw - Math.abs(lat);
+      if (pa > 0 && pl > 0) {
+        if (Math.abs(S.speed) > 1.5) penalty(15, 'Arabaya çarptın', 'car');
+        if (pa < pl) { S.pos.x += t.dir.x * pa * Math.sign(along || 1); S.pos.z += t.dir.z * pa * Math.sign(along || 1); }
+        else { S.pos.x += t.dir.z * pl * Math.sign(lat || 1); S.pos.z -= t.dir.x * pl * Math.sign(lat || 1); }
+        S.speed *= 0.4;
+      }
     }
   }
 
