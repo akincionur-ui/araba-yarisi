@@ -16,7 +16,7 @@
     --font-body: "Inter", system-ui, -apple-system, sans-serif;
     color-scheme: dark;
   }
-  html, body { height: 100%; margin: 0; }
+  html, body { height: 100%; }
   [hidden] { display: none !important; }
   body { background: #0c1016; color: var(--hud-fg); font-family: var(--font-body); overflow: hidden; }
   #game { position: fixed; inset: 0; }
@@ -59,6 +59,7 @@
   .gsub { color: var(--hud-dim); font-size: 13px; }
   .gcars { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
   .gcars button { font-family: var(--font-body); font-size: 14px; font-weight: 600; padding: 12px; border-radius: 9px; border: 1px solid rgba(255,255,255,0.16); background: rgba(255,255,255,0.06); color: var(--hud-fg); cursor: pointer; text-align: left; }
+  .gcars button small { display: block; font-weight: 400; font-size: 12px; color: var(--hud-dim); margin-top: 3px; }
   .gcars button[aria-pressed="true"] { border-color: var(--accent); background: rgba(255, 204, 51, 0.16); }
   .gcolors { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .gswatches { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -409,6 +410,26 @@ import { Sky } from 'three/addons/objects/Sky.js';
     ledge.position.set(cx, h + 0.25, cz); ledge.rotation.y = rot; scene.add(ledge);
   }
 
+  let shopAt = null;
+  // Onur Tekel: a real shop front (Onur's own photo) a few buildings after the start, on the driver's right
+  {
+    const i = 38, side = -1;
+    shopAt = pts[i].clone().addScaledVector(nors[i], side * (CURB + WALK));
+    const W = 13, PH = W * 900 / 1600, d = 12, h = 15;
+    const off = CURB + WALK + 0.6 + d / 2;
+    const c = pts[i].clone().addScaledVector(nors[i], side * off);
+    const rot = Math.atan2(tans[i].x, tans[i].z);
+    placedB.push({ x: c.x, z: c.z, r: Math.hypot(W, d) / 2 + 2 });
+    addBuilding(c.x, c.z, rot, d, W, h);   // box x = depth from the road, z = frontage along it
+    const tex = new THREE.TextureLoader().load('assets/onur_tekel.jpg');
+    tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    const front = new THREE.Mesh(new THREE.PlaneGeometry(W, PH), new THREE.MeshStandardMaterial({ map: tex, emissiveMap: tex, emissive: 0x777777, roughness: 0.85, envMapIntensity: 0.5 }));
+    front.position.copy(c).addScaledVector(nors[i], -side * (d / 2 + 0.05)).setY(PH / 2 + 0.14);
+    front.lookAt(pts[i].x, PH / 2, pts[i].z);
+    front.receiveShadow = true;
+    scene.add(front);
+  }
+
   for (let i = 0; i < N; i += 6) {
     if (i < 14 || i > N - 14) continue;            // keep the start/finish open
     for (const side of [-1, 1]) {
@@ -471,6 +492,7 @@ import { Sky } from 'three/addons/objects/Sky.js';
   for (let i = 19; i < N; i += 22) {
     const side = (Math.floor(i / 22) % 2) ? -1 : 1;
     const p = pts[i].clone().addScaledVector(nors[i], side * (CURB + WALK - 1.2));
+    if (shopAt && p.distanceTo(shopAt) < 12) continue;   // keep the shop front clear
     tree(p.x, p.z, 0.7, i);
   }
   let placedT = 0, tries = 0;
@@ -494,12 +516,12 @@ import { Sky } from 'three/addons/objects/Sky.js';
     { name: 'Yeşil', c: 0x1f4d2b }
   ];
   const CARS = [
-    { id: 'ferrari', name: 'Ferrari 458 Italia', file: 'assets/ferrari.glb.b64.txt', paint: 0xb0000a,
+    { id: 'ferrari', name: 'Ferrari 458 Italia', vmax: 75, accel: 12, file: 'assets/ferrari.glb.b64.txt', paint: 0xb0000a,
       credit: 'Model: <a href="https://sketchfab.com/models/57bf6cc56931426e87494f554df1dab6" target="_blank" rel="noopener">vicent091036</a>, CC BY 4.0' },
-    { id: 'nitro', name: 'Dodge Nitro 2008', file: 'assets/nitro.glb.b64.txt', paint: 0x050608, length: 4.58, flip: false,
+    { id: 'nitro', name: 'Dodge Nitro 2008', vmax: 52, accel: 8, file: 'assets/nitro.glb.b64.txt', paint: 0x050608, length: 4.58, flip: false,
       paintMats: ['Color_009'], chromeMats: ['Color_002'], glassMats: ['Translucent_Glass_Gray_1', 'Color_005'],
       credit: 'Model: <a href="https://sketchfab.com/3d-models/325e81d33e7f4a20a41306187ad20710" target="_blank" rel="noopener">Carrules501</a>, CC BY 4.0' },
-    { id: 'corsa', name: 'Opel Corsa 2011', file: 'assets/corsa.glb.b64.txt', paint: 0x7d7468, length: 4.0, flip: false, rotX: -Math.PI / 2,
+    { id: 'corsa', name: 'Opel Corsa 2011', vmax: 50, accel: 7.5, file: 'assets/corsa.glb.b64.txt', paint: 0x7d7468, length: 4.0, flip: false, rotX: -Math.PI / 2,
       paintMats: ['carpaint'], chromeMats: ['chrome'], glassMats: ['windowglass', 'clearglass'], wheelMats: ['tire', 'material', 'brakedisk'],
       credit: 'Model: <a href="https://sketchfab.com/3d-models/015352c125cf43a88d3e6c6def277b9a" target="_blank" rel="noopener">niev</a>, CC BY 4.0' }
   ];
@@ -615,6 +637,8 @@ import { Sky } from 'three/addons/objects/Sky.js';
     return p;
   }
   function mountCar(id) {
+    const cfg = CARS.find(c => c.id === id);
+    MAX_FWD = cfg.vmax; ACCEL = cfg.accel;
     while (body.children.length) body.remove(body.children[0]);
     const e = carCache[id];
     body.add(e.root);
@@ -811,9 +835,10 @@ import { Sky } from 'three/addons/objects/Sky.js';
   function toast(msg) { const el = $('toast'); el.textContent = msg; el.style.opacity = 1; clearTimeout(toastTimer); toastTimer = setTimeout(() => el.style.opacity = 0, 2200); }
 
   // ---------- Physics ----------
-  const MAX_FWD = 58;       // m/s (~209 km/h)
+  let MAX_FWD = 75;         // m/s, set per car in the garage
   const MAX_REV = 10;
-  const ACCEL = 14, BRAKE = 30, DRAG = 0.012, ROLL = 2.2;
+  let ACCEL = 12;
+  const BRAKE = 30, DRAG = 0.0015, ROLL = 2.2;
   let clock = 0;
 
   function garageStep(dt) {
@@ -848,10 +873,10 @@ import { Sky } from 'three/addons/objects/Sky.js';
     const gas = racing && keys.gas, brake = racing && keys.brake;
 
     // longitudinal
-    if (gas) S.speed += ACCEL * (1 - Math.max(0, S.speed) / MAX_FWD * 0.85) * dt;
+    if (gas) S.speed += ACCEL * Math.max(0, 1 - (Math.max(0, S.speed) / MAX_FWD) ** 2) * dt;
     if (brake) S.speed -= (S.speed > 0.5 ? BRAKE : ACCEL * 0.6) * dt;
     if (!gas && !brake) S.speed -= Math.sign(S.speed) * Math.min(Math.abs(S.speed), ROLL * dt);
-    S.speed -= DRAG * S.speed * Math.abs(S.speed) * dt;
+    if (!gas) S.speed -= DRAG * S.speed * Math.abs(S.speed) * dt;
     if (keys.hand) S.speed -= Math.sign(S.speed) * Math.min(Math.abs(S.speed), 18 * dt);
     if (off) {
       S.speed -= S.speed * 1.4 * dt;
@@ -973,7 +998,7 @@ import { Sky } from 'three/addons/objects/Sky.js';
     if (!cars || !sw) return;
     if (!cars.children.length) {
       CARS.forEach((c, i) => {
-        const b = document.createElement('button'); b.type = 'button'; b.textContent = c.name;
+        const b = document.createElement('button'); b.type = 'button'; b.innerHTML = `${c.name}<small>En yüksek hız ${Math.round(c.vmax * 3.6)} km/sa</small>`;
         b.addEventListener('click', () => { loadCar(i).then(refreshGarage, () => toast('Araba yüklenemedi')); setPaintHex(c.paint); refreshGarage(); });
         cars.appendChild(b);
       });
