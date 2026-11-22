@@ -669,7 +669,8 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       const quads = {};
       outer.traverse(o => {
         if (!o.isMesh || !cfg.wheelMats.includes(o.material && o.material.name)) return;
-        const b = new THREE.Box3().setFromObject(o), mc = b.getCenter(new THREE.Vector3());
+        const b = new THREE.Box3().setFromObject(o), mc = b.getCenter(new THREE.Vector3()), bs = b.getSize(new THREE.Vector3());
+        if (bs.x > 0.9 || bs.z > 1.2) return;   // one mesh holding parts of several wheels (e.g. all four brake discs): leave it fixed
         const key = (mc.x > 0 ? 'r' : 'l') + (mc.z > 0 ? 'f' : 'b');
         (quads[key] = quads[key] || []).push({ o, b });
       });
