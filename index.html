@@ -109,6 +109,7 @@
     #pauseBtn { left: calc(max(16px, env(safe-area-inset-left, 0px)) + 48px); }
     body.steer-drag #tLeft, body.steer-drag #tRight, body.steer-tilt #tLeft, body.steer-tilt #tRight { display: none; }
     body.steer-drag #steerZone { display: block; }
+    body.easy #tGas { display: none; }
   }
   #steerZone { display: none; position: fixed; left: 0; width: 50%; top: 40%; bottom: 0; touch-action: none; }
   #wheel { position: absolute; left: max(24px, env(safe-area-inset-left, 0px)); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); width: 118px; height: 118px; opacity: 0.85; pointer-events: none; transition: opacity 0.2s; }
@@ -156,6 +157,7 @@
     <button id="mCam" type="button"><span>Kamera: <span id="mCamName">Takip</span></span> <kbd>C</kbd></button>
     <button id="mQuality" type="button"><span id="mQualityName">Grafik: Yüksek</span> <kbd>G</kbd></button>
     <button id="mWeather" type="button"><span id="mWeatherName">Hava: Açık</span> <kbd>Y</kbd></button>
+    <button id="mEasy" type="button"><span id="mEasyName">Kolay sürüş: Açık</span> <kbd>gaz + viraj yardımı</kbd></button>
     <button id="mSteer" type="button"><span id="mSteerName">Direksiyon: Kaydır</span> <kbd>dokunmatik</kbd></button>
     <button id="mNight" type="button"><span id="mNightName">Saat: Gündüz</span> <kbd>N</kbd></button>
     <button id="mSound" type="button"><span id="mSoundName">Ses: açık</span> <kbd>M</kbd></button>
@@ -3083,8 +3085,8 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     zone.addEventListener('pointerdown', e => { e.preventDefault(); initAudio(); id = e.pointerId; x0 = e.clientX; zone.setPointerCapture(id); zone.classList.add('active'); steerIn = 0; document.getElementById('steerHint').hidden = true; });
     zone.addEventListener('pointermove', e => {
       if (e.pointerId !== id) return;
-      const d = (e.clientX - x0) / 70;   // 70 px of drag = full lock
-      if (Math.abs(d) > 1) x0 = e.clientX - Math.sign(d) * 70;   // the centre follows a long drag so turning back is quick
+      const d = (e.clientX - x0) / 100;   // 100 px of drag = full lock
+      if (Math.abs(d) > 1) x0 = e.clientX - Math.sign(d) * 100;   // the centre follows a long drag so turning back is quick
       steerIn = -Math.max(-1, Math.min(1, d));
       wheelEl.style.transform = `rotate(${-steerIn * 90}deg)`;
     });
@@ -3108,6 +3110,11 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     toast('Direksiyon: ' + SNAME[steerMode]);
   }
   document.getElementById('mSteer').addEventListener('click', cycleSteer);
+  let easy = COARSE;
+  try { const v = localStorage.getItem('pistEasy'); if (v === '1' || v === '0') easy = v === '1'; } catch (e) {}
+  function applyEasy() { document.body.classList.toggle('easy', easy); document.getElementById('mEasyName').textContent = 'Kolay sürüş: ' + (easy ? 'Açık' : 'Kapalı'); }
+  document.getElementById('mEasy').addEventListener('click', () => { easy = !easy; try { localStorage.setItem('pistEasy', easy ? '1' : '0'); } catch (e) {} applyEasy(); toast('Kolay sürüş: ' + (easy ? 'açık (otomatik gaz, virajda fren)' : 'kapalı')); });
+  applyEasy();
   applySteerMode();
   for (const [id, k] of [['tLeft', 'left'], ['tRight', 'right'], ['tGas', 'gas'], ['tBrake', 'brake'], ['tNitro', 'nitro']]) {
     const b = document.getElementById(id);
@@ -3162,7 +3169,18 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     const racing = S.phase === 'race' || S.phase === 'free';
     const near = cruise ? null : nearest(S.pos, S.idx);
     const off = !cruise && Math.abs(near.lat) > HALF + KERB * 0.6;
-    const gas = racing && keys.gas, brake = racing && keys.brake;
+    // easy driving (default on phones): the car accelerates by itself, brakes for corners and for the speed limit
+    let autoGas = easy && racing && !keys.brake && S.speed > -0.5;
+    if (autoGas) {
+      const capKmh = cruise ? speedLimit() + 5 : 1e9;
+      if (S.speed * 3.6 > capKmh) autoGas = false;
+      if (!cruise) {
+        let cap = Infinity;
+        for (let o = 4; o <= 40; o += 4) cap = Math.min(cap, vAllow[(S.idx + o) % N] * 1.04);
+        if (S.speed > cap) { autoGas = false; S.speed -= Math.min(S.speed - cap, BRAKE * 0.8 * dt); }
+      }
+    }
+    const gas = racing && (keys.gas || autoGas), brake = racing && keys.brake;
 
     // nitro: a short push past the car's top speed, refilled slowly and by drifting
     const boosting = racing && keys.nitro && S.nitro > 0.01 && S.speed > 2;
@@ -3186,8 +3204,15 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
 
     // steering
     const target = steerIn != null ? steerIn : (keys.left ? 1 : 0) - (keys.right ? 1 : 0);
-    S.steer += (target - S.steer) * Math.min(1, dt * 8);
+    S.steer += (target - S.steer) * Math.min(1, dt * (steerIn != null ? 6 : 8));
     const sp = Math.abs(S.speed);
+    // easy driving on the race track: a gentle pull back towards the road when you drift wide
+    if (easy && !cruise && racing && near && S.speed > 5 && Math.abs(near.lat) > HALF - 3.5) {
+      const ex = Math.min(1, (Math.abs(near.lat) - (HALF - 3.5)) / 4);   // only near the edge, stronger the closer you get
+      const t = tans[near.i], want = Math.atan2(t.x, t.z) - Math.sign(near.lat) * 0.12;
+      let dA = want - S.heading; dA = Math.atan2(Math.sin(dA), Math.cos(dA));
+      if (dA * near.lat * -1 >= 0 || Math.abs(dA) > 0.05) S.heading += dA * Math.min(1, dt * 2.2 * ex);
+    }
     const grip = (keys.hand ? 1.5 : 1) * (wet && sp > 15 ? 0.78 : 1);
     const turnRate = 2.1 * grip * Math.min(1, sp / 8) / (1 + sp / 45);
     S.heading += S.steer * turnRate * Math.sign(S.speed) * dt;
