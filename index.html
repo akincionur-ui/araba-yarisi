@@ -155,7 +155,7 @@
 </div>
 <div id="over" hidden>
   <div class="menu" role="dialog" aria-label="Oyun bitti">
-    <h2>EHLİYETİNE EL KONULDU</h2>
+    <h2 id="overTitle">EHLİYETİNE EL KONULDU</h2>
     <p id="overText" class="overtext"></p>
     <button id="overRestart" class="primary" type="button">Yeniden başla <kbd>Enter</kbd></button>
     <button id="overGarage" type="button">Garaja dön</button>
@@ -2252,7 +2252,18 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     if (isBest) { bestKm = km; try { localStorage.setItem('pistBestKm', String(km)); } catch (e) {} }
     const why = Object.entries(R.log).map(([k, v]) => `${k}: ${v}`).join(' · ');
     $('overText').innerHTML = `Puanın bitti. ${km.toFixed(1).replace('.', ',')} km yol yaptın${isBest ? ' (en iyi!)' : ` (en iyi: ${bestKm.toFixed(1).replace('.', ',')} km)`}.<br>${why}`;
+    $('overTitle').textContent = 'EHLİYETİNE EL KONULDU';
     $('over').hidden = false;
+  }
+  const RACE_LAPS = 3;
+  function finishRace() {
+    const rank = 1 + rivals.filter(r => r.prog > S.prog).length;
+    S.phase = 'over';
+    const total = S.laps.reduce((a, b) => a + b, 0);
+    $('overTitle').textContent = rank === 1 ? '🏆 KAZANDIN!' : `YARIŞ BİTTİ: ${rank}. OLDUN`;
+    $('overText').innerHTML = S.laps.map((t, k) => `${k + 1}. tur: ${fmt(t)}`).join('<br>') + `<br><b>Toplam: ${fmt(total)}</b>`;
+    $('over').hidden = false;
+    if (rank === 1) [523, 659, 784, 1046].forEach((f, k) => beep(f, 0.25, k * 0.14, 0.25)); else lapChime(false);
   }
   function restartCruise() { $('over').hidden = true; reset(); }
 
@@ -2265,12 +2276,14 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     for (let i = 0; i < N; i++) {
       const a = tans[(i - 5 + N) % N], b = tans[(i + 5) % N];
       const ang = Math.acos(Math.max(-1, Math.min(1, a.dot(b))));
-      vC[i] = Math.sqrt(10.5 / Math.max(ang / (10 * SEG), 1e-4));
+      // corner speed the player's own car can manage: yaw rate v/R must stay under 2.1 / (1 + v/45)
+      const R = 1 / Math.max(ang / (10 * SEG), 1e-4);
+      vC[i] = (-45 + Math.sqrt(2025 + 4 * 94.5 * R * 0.9)) / 2;
     }
     for (let i = 0; i < N; i++) vAllow[i] = vC[i];
-    for (let rep = 0; rep < 2; rep++) for (let k = 2 * N - 1; k >= 0; k--) { const i = k % N; vAllow[i] = Math.min(vC[i], Math.sqrt(vAllow[(i + 1) % N] ** 2 + 2 * 11 * SEG)); }
+    for (let rep = 0; rep < 2; rep++) for (let k = 2 * N - 1; k >= 0; k--) { const i = k % N; vAllow[i] = Math.min(vC[i], Math.sqrt(vAllow[(i + 1) % N] ** 2 + 2 * 20 * SEG)); }
   }
-  const RIVAL_SKILL = [0.86, 0.93, 1.0], RIVAL_LANE = [4.5, -4.5, 4.5], RIVAL_START = [0, -6, -12];
+  const RIVAL_SKILL = [0.92, 0.97, 1.02], RIVAL_LANE = [4.5, -4.5, 4.5], RIVAL_START = [0, -6, -12];
   const rivals = RIVAL_SKILL.map((skill, k) => ({ skill, prog: 0, off: 0, base: RIVAL_LANE[k], offT: 0, v: 0, obj: new THREE.Group(), pos: new THREE.Vector3(), dir: new THREE.Vector3(), id: null }));
   rivals.forEach(r => rivalsG.add(r.obj));
   const rivalIds = () => ['nitro', 'corsa', 'troc', 'ferrari'].filter(id => id !== CARS[carIdx].id).slice(0, 3);
@@ -2299,7 +2312,10 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     const go = S.phase === 'race';
     for (const r of rivals) {
       const idx = Math.floor((((S.idxStart + r.prog) % N) + N) % N);
-      let target = Math.min(r.skill * MAX_FWD, vAllow[idx] * r.skill);
+      // keep it close: a rival far behind you pushes harder, one far ahead eases off
+      const lead = (r.prog - S.prog) * SEG;
+      const band = lead < -120 ? 1.18 : lead < -40 ? 1.08 : lead > 200 ? 0.9 : 1;
+      let target = Math.min(r.skill * band * MAX_FWD, vAllow[idx] * r.skill * band);
       // the player just ahead in our line: go round, or wait
       const gap = (S.prog - r.prog) * SEG;
       if (gap > 0 && gap < 16 && Math.abs(playerLat - r.off) < 2.8) {
@@ -2308,7 +2324,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       } else if (gap < -10 || gap > 30) r.offT = r.base;
       for (const o of rivals) if (o !== r) { const g2 = (o.prog - r.prog) * SEG; if (g2 > 0 && g2 < 7 && Math.abs(o.off - r.off) < 2.2) target = Math.min(target, o.v * 0.97); }
       if (!go) target = 0;
-      r.v += Math.max(-14 * dt, Math.min(ACCEL * 0.85 * dt, target - r.v));
+      r.v += Math.max(-22 * dt, Math.min(ACCEL * dt, target - r.v));
       r.prog += r.v * dt / SEG;
       r.off += Math.max(-2.2 * dt, Math.min(2.2 * dt, r.offT - r.off));
     }
@@ -2346,7 +2362,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     }
     const i = N - 6;
     S.pos.copy(pts[i]); S.heading = Math.atan2(tans[i].x, tans[i].z);
-    S.speed = 0; S.steer = 0; S.idx = i; S.idxStart = i; S.lap = 1; S.half = false; S.last = null;
+    S.speed = 0; S.steer = 0; S.idx = i; S.idxStart = i; S.lap = 1; S.laps = []; $('over').hidden = true; S.half = false; S.last = null;
     resetRivals();
     S.phase = 'count'; S.countT = 3.5; S.lastShown = null;
     camPos.copy(S.pos).add(new THREE.Vector3(-Math.sin(S.heading) * 12, 5, -Math.cos(S.heading) * 12));
@@ -2612,15 +2628,16 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
         let msg = `Tur ${S.lap}: ${fmt(t)} · ${$('rank').textContent.split(' ')[0]}. sıra`;
         const isBest = S.best == null || t < S.best;
         if (isBest) { S.best = t; msg += '  En iyi!'; try { localStorage.setItem('pistBest', String(t)); } catch (e) {} }
-        toast(msg); lapChime(isBest);
-        S.lap++;
+        S.laps.push(t);
+        if (S.lap >= RACE_LAPS) { finishRace(); }
+        else { toast(msg); lapChime(isBest); S.lap++; }
       }
       S.lapStart = clock; S.half = false;
     }
     }
 
     // HUD
-    $('lap').textContent = S.lap;
+    $('lap').textContent = S.lap + ' / ' + RACE_LAPS;
     $('cur').textContent = fmt(racing ? clock - S.lapStart : 0);
     $('last').textContent = fmt(S.last);
     $('best').textContent = fmt(S.best);
