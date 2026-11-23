@@ -98,6 +98,7 @@
 
 <div id="times" class="hud panel" lang="tr">
   <div class="row"><span class="label">Tur</span><span class="lapnum" id="lap">1</span></div>
+  <div class="row"><span class="label">Sıra</span><span class="val" id="rank">1 / 4</span></div>
   <div class="row"><span class="label">Şu an</span><span class="val" id="cur">0:00.000</span></div>
   <div class="row"><span class="label">Son tur</span><span class="val" id="last">–</span></div>
   <div class="row"><span class="label">En iyi</span><span class="val" id="best">–</span></div>
@@ -107,7 +108,7 @@
   <b>W / ↑</b> gaz · <b>S / ↓</b> fren, geri<br>
   <b>A D / ← →</b> direksiyon · <b>Boşluk</b> el freni<br>
   <b>R</b> yeniden başla · <b>C</b> kamera · <b>B</b> renk<br>
-  <b>H</b> korna · <b>N</b> gece/gündüz · <b>Esc / P</b> duraklat
+  <b>H</b> korna · <b>N</b> gece · <b>Y</b> hava · <b>Esc / P</b> duraklat
 </div>
 
 <div id="speedo" class="hud panel">
@@ -127,6 +128,7 @@
     <button id="mGarage" type="button"><span>Garaj: araba ve renk</span> <kbd>B renk</kbd></button>
     <button id="mCam" type="button"><span>Kamera: <span id="mCamName">Takip</span></span> <kbd>C</kbd></button>
     <button id="mQuality" type="button"><span id="mQualityName">Grafik: Yüksek</span> <kbd>G</kbd></button>
+    <button id="mWeather" type="button"><span id="mWeatherName">Hava: Açık</span> <kbd>Y</kbd></button>
     <button id="mNight" type="button"><span id="mNightName">Saat: Gündüz</span> <kbd>N</kbd></button>
     <button id="mSound" type="button"><span id="mSoundName">Ses: açık</span> <kbd>M</kbd></button>
     <p class="credits">Araba modelleri Sketchfab'dan, CC BY 4.0: Ferrari 458 (vicent091036), Dodge Nitro (Carrules501), Opel Corsa ve VW T-Roc (niev), VW T1 Minibüs (jesseroberts). Gökyüzü ışığı ve dokular: Poly Haven ve three.js örnekleri.</p>
@@ -148,6 +150,7 @@
 <div id="cruiseHud" class="hud panel" hidden>
   <div class="row"><span class="label">Ehliyet puanı</span><span class="pts" id="pts">100</span></div>
   <div class="row"><span class="label">Yol</span><span class="val" id="km">0,0 km</span></div>
+  <div class="row"><span class="label">Benzin</span><span id="fuelBar" style="display:inline-block;width:72px;height:10px;border-radius:5px;background:rgba(255,255,255,0.18);overflow:hidden;vertical-align:middle"><span id="fuelFill" style="display:block;height:100%;width:100%;background:#4fd67a"></span></span></div>
   <div class="row"><span class="label">Hız sınırı</span><span class="limit" id="limit">50</span></div>
 </div>
 <div id="over" hidden>
@@ -758,7 +761,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   // ---------- Cruise mode: a separate street-grid city (school, zebra crossings, Onur Tekel) ----------
   const raceObjs = scene.children.filter(o => !preRace.has(o) && o !== car);
   const cruiseG = new THREE.Group(); cruiseG.visible = false; scene.add(cruiseG);
-  const CX = -160, CZ = 1700, P = 80, G = 4, RH = 6, SW = 4;   // grid origin, road spacing, blocks per side, road half width, sidewalk
+  const CX = -240, CZ = 1700, P = 120, G = 4, RH = 6, SW = 4;   // grid origin, road spacing, blocks per side, road half width, sidewalk
   const SPAN = G * P;
   const buckets = new Map();   // material -> geometries, merged into one mesh each to keep draw calls low
   function bake(mat, geo) { if (!buckets.has(mat)) buckets.set(mat, []); buckets.get(mat).push(geo); }
@@ -909,6 +912,8 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   keepOut.push([SB.x0, SB.x1, SB.z0, SB.z1]);
   const SHOP = { x1: CX + 2 * P - RH - SW, z0: CZ + 52, z1: CZ + 66 };   // east edge of block (1,0), facing the street x = 0
   keepOut.push([SHOP.x1 - 14, SHOP.x1, SHOP.z0, SHOP.z1]);
+  const STATION = { x0: SHOP.x1 - 30, x1: SHOP.x1, z0: CZ + 13, z1: CZ + 46 };   // petrol station just before the shop
+  keepOut.push([STATION.x0, STATION.x1, STATION.z0 - 2, STATION.z1 + 2]);
   // ---------- Country road: hills south of the city, the cruise starts here ----------
   const HW = 7.5;                       // half width of the country road
   const HWN = 700;
@@ -1124,7 +1129,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   // street trees along the kerbs, instanced (two draw calls for all of them)
   const streetTrees = [];
   {
-    const noTree = [[SHOP.x1 + 3, (SHOP.z0 + SHOP.z1) / 2, 14], [CX + 2 * P, schoolZ, 42], [RBX, RBZ, 20], [CX + 2 * P, CZ - RH - SW, 14],
+    const noTree = [[SHOP.x1 + 3, (SHOP.z0 + SHOP.z1) / 2, 14], [SHOP.x1 + 3, (STATION.z0 + STATION.z1) / 2, 20], [CX + 2 * P, schoolZ, 42], [RBX, RBZ, 20], [CX + 2 * P, CZ - RH - SW, 14],
       [CX + P - RH, CZ + 2 * P + 56, 14], [CX + 2 * P + 56, CZ + 3 * P + RH, 14]];
     const off = RH + 0.9;
     for (let i = 0; i <= G; i++) for (let j = 0; j <= G; j++) for (const [dx, dz] of [[1, 0], [0, 1]]) {
@@ -1295,6 +1300,39 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     }
   }
 
+
+  // ---------- Petrol station ----------
+  {
+    const { x0, x1, z0, z1 } = STATION, cxs = (x0 + x1) / 2 + 3, czs = (z0 + z1) / 2;
+    const padTex = concreteTex.clone(); padTex.repeat.set(8, 8); padTex.needsUpdate = true;
+    const pad = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0 + 4, z1 - z0).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: padTex, color: 0xc9c7c0, roughness: 0.8 }));
+    pad.position.set((x0 + x1) / 2 + 2, 0.17, czs); pad.receiveShadow = true; cruiseG.add(pad);
+    const white = new THREE.MeshStandardMaterial({ color: 0xf2f2ef, roughness: 0.5 }), red = new THREE.MeshStandardMaterial({ color: 0xc8241e, roughness: 0.5 });
+    const grey = new THREE.MeshStandardMaterial({ color: 0x8a8f96, roughness: 0.5, metalness: 0.4 });
+    const add = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; cruiseG.add(m); return m; };
+    // canopy
+    const fascia = signTex(1024, 96, (c, w, h) => { c.fillStyle = '#c8241e'; c.fillRect(0, 0, w, h); c.fillStyle = '#fff'; c.font = 'bold 64px Arial'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('AKARYAKIT  •  MARKET', w / 2, h / 2 + 2); });
+    const fm = new THREE.MeshStandardMaterial({ map: fascia, roughness: 0.5, emissiveMap: fascia, emissive: 0x444444 });
+    add(new THREE.BoxGeometry(16, 0.9, 22), [fm, fm, white, white, red, red], cxs, 5.6, czs);
+    for (const [dx, dz] of [[-5, -7], [5, -7], [-5, 7], [5, 7]]) add(new THREE.CylinderGeometry(0.28, 0.28, 5.2, 12), white, cxs + dx, 2.6, czs + dz);
+    // pump islands
+    const pumpFace = signTex(128, 256, (c, w, h) => { c.fillStyle = '#e9e9e6'; c.fillRect(0, 0, w, h); c.fillStyle = '#c8241e'; c.fillRect(0, 0, w, 50); c.fillStyle = '#111'; c.fillRect(18, 70, w - 36, 44); c.fillStyle = '#5cff7a'; c.font = 'bold 26px monospace'; c.fillText('44,90', 26, 100); c.fillStyle = '#1b54b8'; c.fillRect(18, 140, 40, 70); c.fillStyle = '#1f7a3a'; c.fillRect(70, 140, 40, 70); });
+    const pfm = new THREE.MeshStandardMaterial({ map: pumpFace, roughness: 0.5 });
+    for (const dz of [-7, 7]) {
+      add(new THREE.BoxGeometry(1.4, 0.25, 6), grey, cxs, 0.3, czs + dz);
+      for (const pz of [-1.4, 1.4]) add(new THREE.BoxGeometry(0.9, 1.9, 0.7), [white, white, red, white, pfm, pfm], cxs, 1.38, czs + dz + pz);
+    }
+    // kiosk at the back
+    const kiosk = signTex(512, 256, (c, w, h) => { c.fillStyle = '#ecebe6'; c.fillRect(0, 0, w, h); c.fillStyle = '#c8241e'; c.fillRect(0, 0, w, 56); c.fillStyle = '#fff'; c.font = 'bold 40px Arial'; c.textAlign = 'center'; c.fillText('MARKET', w / 2, 42); const g = c.createLinearGradient(0, 70, 0, 250); g.addColorStop(0, '#8fa3b0'); g.addColorStop(1, '#2c363d'); c.fillStyle = g; c.fillRect(20, 76, w - 40, 170); c.fillStyle = '#ecebe6'; for (let x = 20; x < w - 20; x += 94) c.fillRect(x, 76, 6, 170); });
+    const km = new THREE.MeshStandardMaterial({ map: kiosk, roughness: 0.4, emissiveMap: kiosk, emissive: 0x222222 });
+    add(new THREE.BoxGeometry(7, 4, 20), [km, white, white, white, white, white], x0 + 3.5, 2, czs);
+    // price pylon by the street
+    const pylon = signTex(256, 512, (c, w, h) => { c.fillStyle = '#c8241e'; c.fillRect(0, 0, w, h); c.fillStyle = '#fff'; c.font = 'bold 44px Arial'; c.textAlign = 'center'; c.fillText('AKARYAKIT', w / 2, 70); c.fillStyle = '#111'; c.fillRect(16, 110, w - 32, 370);
+      c.font = 'bold 30px Arial'; c.fillStyle = '#fff'; [['BENZİN', '44,90'], ['MOTORİN', '46,10'], ['LPG', '24,30']].forEach(([a, b], k) => { c.textAlign = 'left'; c.fillText(a, 30, 170 + k * 110); c.fillStyle = '#ffcc33'; c.textAlign = 'right'; c.fillText(b, w - 30, 210 + k * 110); c.fillStyle = '#fff'; }); });
+    const plm = new THREE.MeshStandardMaterial({ map: pylon, emissiveMap: pylon, emissive: 0x555555, roughness: 0.5 });
+    add(new THREE.BoxGeometry(0.5, 6.5, 3.2), [plm, plm, red, red, red, red], x1 - 1, 3.25, z0 + 1.5);
+  }
+
   // ---------- Onur Tekel, a few buildings after the start on the right ----------
   {
     const W = 14, PH = W * 900 / 1600, h = 15;
@@ -1430,7 +1468,9 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     let hit = false;
     if (bi >= 0 && bi < G && bj >= 0 && bj < G) {
       const lu = u - bi * P, lv = v - bj * P;
-      if (lu > A && lu < P - A && lv > A && lv < P - A) {
+      const inSt = S.pos.z > STATION.z0 && S.pos.z < STATION.z1 && S.pos.x > STATION.x0 + 7;
+      if (S.pos.z > STATION.z0 && S.pos.z < STATION.z1 && S.pos.x > STATION.x0 - 2 && S.pos.x < STATION.x0 + 7.9) { S.pos.x = STATION.x0 + 8; hit = true; }
+      else if (!inSt && lu > A && lu < P - A && lv > A && lv < P - A) {
         const pl = lu - A, pr = P - A - lu, pb = lv - A, pt = P - A - lv, m = Math.min(pl, pr, pb, pt);
         if (m === pl) S.pos.x -= pl; else if (m === pr) S.pos.x += pr; else if (m === pb) S.pos.z -= pb; else S.pos.z += pt;
         hit = true;
@@ -1473,6 +1513,8 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     S.mode = m;
     for (const o of raceObjs) o.visible = m === 'race';
     cruiseG.visible = m === 'cruise';
+    rivalsG.visible = m === 'race';
+    if (m !== 'cruise') clearEmergencies();
     if (m === 'cruise') CARS.forEach((c, i) => { if (TRAFFIC_IDS.includes(c.id)) ensureModel(i).catch(() => {}); });
     try { localStorage.setItem('pistMode', m); } catch (e) {}
     document.getElementById('times').style.display = m === 'race' ? '' : 'none';
@@ -1488,13 +1530,13 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   const nodePos = (i, j) => new THREE.Vector3(CX + i * P, 0, CZ + j * P);
   const rightOf = d => [-d[1], d[0]];
   const traffic = [];
-  function legPieces(a, b, c) {   // drive from node a to node b, then turn towards node c
+  function legPieces(a, b, c, lane = LANE) {   // drive from node a to node b, then turn towards node c
     const dAB = [Math.sign(b[0] - a[0]), Math.sign(b[1] - a[1])], dBC = [Math.sign(c[0] - b[0]), Math.sign(c[1] - b[1])];
     const rAB = rightOf(dAB), rBC = rightOf(dBC), A = nodePos(...a), B = nodePos(...b);
     const oA = isRB(...a) ? RB_OUT : RH, oB = isRB(...b) ? RB_OUT : RH;
-    const p0 = A.clone().add(new THREE.Vector3(dAB[0] * oA + rAB[0] * LANE, 0, dAB[1] * oA + rAB[1] * LANE));
-    const p1 = B.clone().add(new THREE.Vector3(-dAB[0] * oB + rAB[0] * LANE, 0, -dAB[1] * oB + rAB[1] * LANE));
-    const p2 = B.clone().add(new THREE.Vector3(dBC[0] * oB + rBC[0] * LANE, 0, dBC[1] * oB + rBC[1] * LANE));
+    const p0 = A.clone().add(new THREE.Vector3(dAB[0] * oA + rAB[0] * lane, 0, dAB[1] * oA + rAB[1] * lane));
+    const p1 = B.clone().add(new THREE.Vector3(-dAB[0] * oB + rAB[0] * lane, 0, -dAB[1] * oB + rAB[1] * lane));
+    const p2 = B.clone().add(new THREE.Vector3(dBC[0] * oB + rBC[0] * lane, 0, dBC[1] * oB + rBC[1] * lane));
     if (isRB(...b)) {   // anticlockwise round the island (driving on the right), out at the chosen exit
       const tIn = Math.atan2(-dAB[1] + rAB[1] * 0.35, -dAB[0] + rAB[0] * 0.35);
       let tOut = Math.atan2(dBC[1] + rBC[1] * 0.35, dBC[0] + rBC[0] * 0.35);
@@ -1507,7 +1549,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       return [{ line: [p0, p1], len: p0.distanceTo(p1) }, { curve: ringC, len: ringC.getLength() }];
     }
     const straight = dAB[0] === dBC[0] && dAB[1] === dBC[1];
-    const ctrl = straight ? p1.clone().lerp(p2, 0.5) : B.clone().add(new THREE.Vector3((rAB[0] + rBC[0]) * LANE, 0, (rAB[1] + rBC[1]) * LANE));
+    const ctrl = straight ? p1.clone().lerp(p2, 0.5) : B.clone().add(new THREE.Vector3((rAB[0] + rBC[0]) * lane, 0, (rAB[1] + rBC[1]) * lane));
     const turn = new THREE.QuadraticBezierCurve3(p1, ctrl, p2);
     return [{ line: [p0, p1], len: p0.distanceTo(p1) }, { curve: turn, len: turn.getLength() }];
   }
@@ -1517,7 +1559,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     if (straight && Math.random() < 0.5) return straight;
     return opts[(Math.random() * opts.length) | 0];
   }
-  function startLeg(t) { t.pieces = legPieces(t.a, t.b, t.c); t.pi = 0; t.s = 0; }
+  function startLeg(t) { t.pieces = legPieces(t.a, t.b, t.c, t.lane || LANE); t.pi = 0; t.s = 0; }
   function spawnTraffic(count) {
     const used = new Set();
     for (let k = 0; k < count; k++) {
@@ -1568,6 +1610,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   function dressTraffic() {   // give each traffic car a model as soon as one is loaded; own paint per car
     for (const t of traffic) {
       if (t.obj.children.length) continue;
+      if (t.emg) { dressEmergency(t); continue; }
       const ids = TRAFFIC_IDS.filter(id => carCache[id]);
       if (!ids.length) return;
       const id = ids[(Math.random() * ids.length) | 0];
@@ -1584,7 +1627,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   }
   const tmpV = new THREE.Vector3();
   function trafficStep(dt) {
-    if (!traffic.length) spawnTraffic(8);
+    if (!traffic.length) spawnTraffic(11);
     dressTraffic();
     const others = traffic.map(t => t.pos);
     for (const t of traffic) {
@@ -1593,7 +1636,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       const check = (p, isPlayer) => {
         tmpV.copy(p).sub(t.pos);
         const ahead = tmpV.dot(t.dir), lat = Math.abs(tmpV.x * t.dir.z - tmpV.z * t.dir.x);
-        if (ahead > 0.5 && ahead < 16 && lat < (isPlayer ? 3 : 2.4)) block = Math.min(block, ahead);
+        if (ahead > 0.5 && ahead < 16 && lat < (isPlayer ? (t.emg ? 2.3 : 3) : (t.emg ? 1.2 : 2.4))) block = Math.min(block, ahead);
       };
       check(S.pos, true);
       const ls = lightStopDist(t); if (ls < Infinity) block = Math.min(block, ls + 7);
@@ -1630,10 +1673,84 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     }
   }
 
+
+  // ---------- Ambulance and fire engine: come up behind you with sirens; pull over to the right ----------
+  let emgTimer = 50 + Math.random() * 30;
+  const emgWhite = new THREE.MeshPhysicalMaterial({ color: 0xf4f4f2, metalness: 0.2, roughness: 0.35, clearcoat: 1 });
+  const emgRed = new THREE.MeshPhysicalMaterial({ color: 0xc0141a, metalness: 0.3, roughness: 0.35, clearcoat: 1 });
+  function dressEmergency(t) {
+    const id = ['van', 'troc', 'nitro'].find(i => carCache[i]); if (!id) return;
+    const m = carCache[id].root.clone(true), fire = t.emg === 'fire';
+    m.traverse(o => { if (o.isMesh && o.material === paint) o.material = fire ? emgRed : emgWhite; });
+    t.obj.add(m);
+    const bb = new THREE.Box3().setFromObject(m), top = bb.max.y, half = (bb.max.x - bb.min.x) / 2 + 0.01;
+    t.lr = new THREE.MeshBasicMaterial({ color: 0xff2020, toneMapped: false }); t.lb = new THREE.MeshBasicMaterial({ color: 0x2050ff, toneMapped: false });
+    const bar = new THREE.Group(); bar.position.y = top + 0.05; t.obj.add(bar);
+    const l = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.16, 0.3), t.lr); l.position.x = -0.3; bar.add(l);
+    const r = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.16, 0.3), fire ? t.lr : t.lb); r.position.x = 0.3; bar.add(r);
+    const txt = signTex(256, 64, (c, w, h) => { c.clearRect(0, 0, w, h); c.fillStyle = fire ? '#fff' : '#d0141a'; c.font = 'bold 38px Arial'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(fire ? 'İTFAİYE' : 'AMBULANS', w / 2, h / 2); });
+    for (const sx of [-1, 1]) { const pl = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 0.55), new THREE.MeshBasicMaterial({ map: txt, transparent: true })); pl.position.set(sx * half, (bb.min.y + top) * 0.5, 0); pl.rotation.y = sx * Math.PI / 2; t.obj.add(pl); }
+    if (!fire) { const cross = signTex(64, 64, (c, w) => { c.fillStyle = '#d0141a'; c.fillRect(24, 6, 16, 52); c.fillRect(6, 24, 52, 16); }); const cr = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.7).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: cross, transparent: true })); cr.position.y = top + 0.02; cr.position.z = -0.8; t.obj.add(cr); }
+    t.beam = new THREE.Mesh(beamGeo, beamMat); t.beam.visible = night; t.beam.renderOrder = 3; t.obj.add(t.beam);
+  }
+  function sirenOn(t) {
+    if (!A.ctx) return;
+    const ctx = A.ctx, o = ctx.createOscillator(), g = ctx.createGain(), lfo = ctx.createOscillator(), lg = ctx.createGain();
+    o.type = 'sawtooth'; o.frequency.value = 820; lfo.type = t.emg === 'fire' ? 'square' : 'triangle'; lfo.frequency.value = t.emg === 'fire' ? 0.9 : 0.45; lg.gain.value = 260;
+    lfo.connect(lg).connect(o.frequency);
+    const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1000; f.Q.value = 0.8;
+    g.gain.value = 0; o.connect(f).connect(g).connect(A.master); o.start(); lfo.start();
+    t.siren = { o, lfo, g };
+  }
+  function sirenOff(t) { if (t.siren) { try { t.siren.o.stop(); t.siren.lfo.stop(); } catch (e) {} t.siren = null; } }
+  function clearEmergencies() { for (let k = traffic.length - 1; k >= 0; k--) if (traffic[k].emg) { sirenOff(traffic[k]); trafficG.remove(traffic[k].obj); traffic.splice(k, 1); } }
+  function spawnEmergency() {
+    // find the street the player is on and the direction they drive
+    const u = (S.pos.x - CX) / P, v = (S.pos.z - CZ) / P;
+    const fx = Math.sin(S.heading), fz = Math.cos(S.heading);
+    let a, b, back;
+    if (Math.abs(v - Math.round(v)) * P < RH && Math.abs(fx) > 0.7 && v > -0.05 && v < G + 0.05) {
+      const j = Math.round(v), dir = Math.sign(fx), i0 = dir > 0 ? Math.floor(u) : Math.ceil(u);
+      a = [i0, j]; b = [i0 + dir, j]; back = Math.abs(u - i0) * P;
+    } else if (Math.abs(u - Math.round(u)) * P < RH && Math.abs(fz) > 0.7 && u > -0.05 && u < G + 0.05) {
+      const i = Math.round(u), dir = Math.sign(fz), j0 = dir > 0 ? Math.floor(v) : Math.ceil(v);
+      a = [i, j0]; b = [i, j0 + dir]; back = Math.abs(v - j0) * P;
+    } else return false;
+    if (a.some(x => x < 0 || x > G) || b.some(x => x < 0 || x > G) || back < 45 || isRB(...a)) return false;
+    const kind = Math.random() < 0.6 ? 'amb' : 'fire';
+    const t = { emg: kind, lane: 1.3, a, b, c: null, v: 14, vmax: 17, stuck: 0, age: 0, behindT: 0, warned: false, wasBehind: false, obj: new THREE.Group(), pos: new THREE.Vector3(), dir: new THREE.Vector3(0, 0, 1) };
+    t.c = nextNode(a, b); startLeg(t);
+    trafficG.add(t.obj); traffic.push(t); sirenOn(t);
+    toast(kind === 'fire' ? '🚒 Arkadan itfaiye geliyor, sağa çek!' : '🚑 Arkadan ambulans geliyor, sağa çek!');
+    return true;
+  }
+  function emergencyStep(dt) {
+    const inCity = S.pos.z > CZ - RH && S.phase === 'free';
+    if (inCity && !traffic.some(t => t.emg)) { emgTimer -= dt; if (emgTimer <= 0) emgTimer = spawnEmergency() ? 70 + Math.random() * 50 : 3; }
+    const on = Math.floor(clock * 6) % 2;
+    for (let k = traffic.length - 1; k >= 0; k--) {
+      const t = traffic[k]; if (!t.emg) continue;
+      t.age += dt;
+      if (t.lr) { t.lr.color.setHex(on ? 0xff2020 : 0x300000); t.lb.color.setHex(on ? 0x000a30 : 0x2050ff); }
+      const dx = S.pos.x - t.pos.x, dz = S.pos.z - t.pos.z, d = Math.hypot(dx, dz);
+      if (t.siren) t.siren.g.gain.setTargetAtTime(0.22 / (1 + d / 25), A.ctx.currentTime, 0.1);
+      // the player ahead of it, in the same direction?
+      const ahead = dx * t.dir.x + dz * t.dir.z, lat = dx * t.dir.z - dz * t.dir.x;   // lat < 0: to its right
+      const same = Math.sin(S.heading) * t.dir.x + Math.cos(S.heading) * t.dir.z > 0.6;
+      if (S.phase === 'free' && ahead > 0 && ahead < 32 && Math.abs(lat) < 5 && same) {
+        t.wasBehind = true;
+        const yielded = -lat > 2.5 || Math.abs(S.speed) < 1.5;
+        t.behindT = yielded ? 0 : t.behindT + dt;
+        if (t.behindT > 6) { penalty(10, t.emg === 'fire' ? 'İtfaiyeye yol vermedin' : 'Ambulansa yol vermedin', 'emg'); t.behindT = -6; }
+      } else if (t.wasBehind && ahead < -3) { t.wasBehind = false; reward(3, 'Yol verdin'); }
+      if (d > 320 || t.age > 90) { sirenOff(t); trafficG.remove(t.obj); traffic.splice(k, 1); }
+    }
+  }
+
   // ---------- Traffic lights: every junction with three or more roads ----------
   const LCYCLE = 26;
-  const hasLight = (i, j) => !isRB(i, j) && ((i > 0) + (i < G) + (j > 0) + (j < G)) >= 3;
-  const lightGroup = (i, j) => (i + j) % 2;
+  const hasLight = (i, j) => !isRB(i, j) && (i + j) % 2 === 0 && ((i > 0) + (i < G) + (j > 0) + (j < G)) >= 3;   // every other junction
+  const lightGroup = (i, j) => i % 2;
   function lightState(axis, group) {   // axis 'z': traffic moving along z; 'x': along x
     const t = (clock + group * 13) % LCYCLE;
     if (axis === 'z') return t < 10 ? 'green' : t < 12.5 ? 'yellow' : 'red';
@@ -1687,6 +1804,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   }
   // distance a traffic car has left before it must stop for the light at the end of its street (Infinity if it may go)
   function lightStopDist(t) {
+    if (t.emg) return Infinity;
     if (t.pi !== 0 || !hasLight(t.b[0], t.b[1])) return Infinity;
     const axis = t.b[0] !== t.a[0] ? 'x' : 'z', st = lightState(axis, lightGroup(t.b[0], t.b[1]));
     const left = t.pieces[0].len - t.s - 4.6;   // stop before the zebra crossing
@@ -1856,6 +1974,58 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     for (const t of traffic) if (t.beam) t.beam.visible = n;
     pools.race.visible = n && S.mode === 'race'; pools.cruise.visible = n && S.mode === 'cruise';
     const el = document.getElementById('mNightName'); if (el) el.textContent = n ? 'Saat: Gece' : 'Saat: Gündüz';
+    applyWeather();
+  }
+
+  // ---------- Weather: clear / rain / fog ----------
+  const WEATHERS = ['clear', 'rain', 'fog'], WNAME = { clear: 'Açık', rain: 'Yağmurlu', fog: 'Sisli' };
+  let weather = 'clear';
+  try { const w = localStorage.getItem('pistWeather'); if (WEATHERS.includes(w)) weather = w; } catch (e) {}
+  const RAIN_N = 2600, rainPos = new Float32Array(RAIN_N * 6), rainSeed = new Float32Array(RAIN_N * 3);
+  for (let i = 0; i < RAIN_N; i++) { rainSeed[i * 3] = Math.random() * 70 - 35; rainSeed[i * 3 + 1] = Math.random() * 28; rainSeed[i * 3 + 2] = Math.random() * 70 - 35; }
+  const rainGeo = new THREE.BufferGeometry(); rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPos, 3));
+  const rain = new THREE.LineSegments(rainGeo, new THREE.LineBasicMaterial({ color: 0xaab4c0, transparent: true, opacity: 0.45, depthWrite: false }));
+  rain.frustumCulled = false; rain.visible = false; scene.add(rain);
+  const wetMats = new Set();
+  function collectWet() {   // road and pavement materials get darker and shinier in the rain
+    scene.traverse(o => { if (!o.isMesh) return; for (const m of [].concat(o.material)) {
+      if (m && m.isMeshStandardMaterial && m.map && m.map.image && (m.map.image === asphaltTex.image || m.map.image === concreteTex.image) && !m.userData.dry) { m.userData.dry = { r: m.roughness, c: m.color.clone() }; wetMats.add(m); }
+    } });
+  }
+  function applyWeather() {
+    const w = weather, n = night;
+    if (!wetMats.size) collectWet();
+    for (const m of wetMats) { const d = m.userData.dry; m.roughness = w === 'rain' ? Math.min(d.r, 0.3) : d.r; m.color.copy(d.c).multiplyScalar(w === 'rain' ? 0.7 : 1); }
+    rain.visible = w === 'rain';
+    const lowQ = quality === 'low';
+    if (w === 'clear') { scene.fog.near = 160; scene.fog.far = lowQ ? 600 : 900; }
+    else if (w === 'rain') { scene.fog.near = 40; scene.fog.far = 360; }
+    else { scene.fog.near = 6; scene.fog.far = 120; }
+    if (w !== 'clear') {
+      const c = n ? (w === 'fog' ? 0x1a1e24 : 0x0d1118) : (w === 'fog' ? 0xc4c9cd : 0x8d959d);
+      scene.fog.color.setHex(c); sky.visible = false; scene.background = new THREE.Color(c);
+      sun.intensity = n ? 0.4 : (w === 'fog' ? 1.0 : 0.9); hemi.intensity = n ? 0.32 : 0.75;
+    }
+    if (A.rainG) A.rainG.gain.setTargetAtTime(w === 'rain' ? 0.16 : 0, A.ctx.currentTime, 0.3);
+    const el = document.getElementById('mWeatherName'); if (el) el.textContent = 'Hava: ' + WNAME[w];
+  }
+  function cycleWeather() {
+    weather = WEATHERS[(WEATHERS.indexOf(weather) + 1) % WEATHERS.length];
+    try { localStorage.setItem('pistWeather', weather); } catch (e) {}
+    applyNight(); if (!paused) toast('Hava: ' + WNAME[weather]);
+  }
+  function rainStep() {
+    if (!rain.visible) return;
+    rain.position.set(Math.round(camera.position.x), 0, Math.round(camera.position.z));
+    const fall = clock * 22, ox = camera.position.x - rain.position.x, oz = camera.position.z - rain.position.z;
+    const by = camera.position.y - 6;
+    for (let i = 0; i < RAIN_N; i++) {
+      const x = rainSeed[i * 3], z = rainSeed[i * 3 + 2];
+      const y = by + ((rainSeed[i * 3 + 1] - fall) % 28 + 28) % 28;
+      rainPos[i * 6] = x + ox * 0; rainPos[i * 6 + 1] = y; rainPos[i * 6 + 2] = z;
+      rainPos[i * 6 + 3] = x + 0.08; rainPos[i * 6 + 4] = y + 0.9; rainPos[i * 6 + 5] = z + 0.05;
+    }
+    rainGeo.attributes.position.needsUpdate = true;
   }
   function toggleNight() { night = !night; try { localStorage.setItem('pistNight', night ? '1' : '0'); } catch (e) {} applyNight(); }
 
@@ -1987,6 +2157,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       g.lineTo(X(CX + 2 * P), Z(CZ)); g.stroke();
       g.fillStyle = '#ffd24a'; g.font = 'bold 10px Inter, sans-serif'; g.textAlign = 'center';
       g.fillText('OKUL', X((SB.x0 + SB.x1) / 2), Z((SB.z0 + SB.z1) / 2) + 3);
+      g.font = '12px sans-serif'; g.fillText('⛽', X((STATION.x0 + STATION.x1) / 2), Z((STATION.z0 + STATION.z1) / 2) + 4);
       g.fillStyle = '#3d8bff'; g.beginPath(); g.arc(X(SHOP.x1 - 3), Z((SHOP.z0 + SHOP.z1) / 2), 3.5, 0, Math.PI * 2); g.fill();
       g.strokeStyle = '#5a636e'; g.lineWidth = 7 * k; g.beginPath(); g.arc(X(RBX), Z(RBZ), RB_RING * k, 0, Math.PI * 2); g.stroke();
       g.fillStyle = '#3aa0c8'; g.beginPath(); g.arc(X(RBX), Z(RBZ), RB_ISLAND * k, 0, Math.PI * 2); g.fill();
@@ -2002,6 +2173,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       g.strokeStyle = '#8a929c'; g.lineWidth = 3; g.beginPath();
       for (let i = 0; i <= N; i += 4) { const q = pts[i % N]; i ? g.lineTo(X(q.x), Z(q.z)) : g.moveTo(X(q.x), Z(q.z)); }
       g.stroke();
+      g.fillStyle = '#ff6a5a'; for (const r of rivals) { g.beginPath(); g.arc(X(r.pos.x), Z(r.pos.z), 3, 0, Math.PI * 2); g.fill(); }
       g.strokeStyle = '#fff'; g.lineWidth = 2; const s0 = pts[0], n0 = nors[0];
       g.beginPath(); g.moveTo(X(s0.x + n0.x * 9), Z(s0.z + n0.z * 9)); g.lineTo(X(s0.x - n0.x * 9), Z(s0.z - n0.z * 9)); g.stroke();
     }
@@ -2016,7 +2188,23 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   // ---------- Cruise rules: a driving-licence score ----------
   const R = { pts: 100, dist: 0, clean: 0, overT: 0, last: {}, t0: 0, log: {} };
   let bestKm = 0; try { bestKm = parseFloat(localStorage.getItem('pistBestKm')) || 0; } catch (e) {}
-  function resetRules() { R.pts = 100; R.dist = 0; R.clean = 0; R.overT = 0; R.last = {}; R.t0 = clock; R.log = {}; updateRulesHud(); }
+  // fuel: a full tank is good for about 6 km; fill up at the station
+  let fuel = 1, fuelWarnT = 0, fillingMsg = false;
+  function fuelStep(dt, d) {
+    fuel = Math.max(0, fuel - d / 6000 - (keys.gas ? dt * 0.0004 : 0));
+    const inSt = S.pos.x > STATION.x0 + 7 && S.pos.x < STATION.x1 + 2 && S.pos.z > STATION.z0 && S.pos.z < STATION.z1;
+    if (inSt && Math.abs(S.speed) < 0.5 && fuel < 1) {
+      fuel = Math.min(1, fuel + dt * 0.18);
+      if (!fillingMsg) { toast('⛽ Depo doluyor…'); fillingMsg = true; }
+      if (fuel >= 1) toast('⛽ Depo doldu, iyi yolculuklar!');
+    } else fillingMsg = false;
+    fuelWarnT -= dt;
+    if (fuel <= 0 && fuelWarnT <= 0) { toastBad('Benzin bitti! Yavaşça benzinliğe git (şehir girişi, sağda)'); fuelWarnT = 6; }
+    else if (fuel < 0.15 && fuel > 0 && fuelWarnT <= 0) { toast('⛽ Benzin azaldı'); fuelWarnT = 20; }
+    if (fuel <= 0 && S.speed > 4) S.speed = Math.max(4, S.speed - 6 * dt);
+    const f = $('fuelFill'); f.style.width = (fuel * 100).toFixed(0) + '%'; f.style.background = fuel > 0.3 ? '#4fd67a' : fuel > 0.12 ? '#ffcc33' : '#ff5a4a';
+  }
+  function resetRules() { fuel = 1; R.pts = 100; R.dist = 0; R.clean = 0; R.overT = 0; R.last = {}; R.t0 = clock; R.log = {}; updateRulesHud(); }
   function updateRulesHud() {
     const el = $('pts'); el.textContent = Math.max(0, Math.round(R.pts));
     el.style.color = R.pts > 60 ? '#4fd67a' : R.pts > 30 ? '#ffcc33' : '#ff5a4a';
@@ -2041,6 +2229,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     if (S.phase !== 'free') return;
     const d = Math.abs(S.speed) * dt;
     R.dist += d; R.clean += d;
+    fuelStep(dt, d);
     if (R.clean >= 400) { R.clean = 0; reward(3, 'Temiz sürüş'); }
     const lim = speedLimit(); $('limit').textContent = lim;
     // out on the open road there's plenty of slack; in town less
@@ -2066,6 +2255,78 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     $('over').hidden = false;
   }
   function restartCruise() { $('over').hidden = true; reset(); }
+
+  // ---------- Race rivals: three AI cars that brake for corners and steer round you ----------
+  const rivalsG = new THREE.Group(); scene.add(rivalsG);
+  const SEG = trackLen / N;
+  const vAllow = new Float32Array(N);
+  {
+    const vC = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      const a = tans[(i - 5 + N) % N], b = tans[(i + 5) % N];
+      const ang = Math.acos(Math.max(-1, Math.min(1, a.dot(b))));
+      vC[i] = Math.sqrt(10.5 / Math.max(ang / (10 * SEG), 1e-4));
+    }
+    for (let i = 0; i < N; i++) vAllow[i] = vC[i];
+    for (let rep = 0; rep < 2; rep++) for (let k = 2 * N - 1; k >= 0; k--) { const i = k % N; vAllow[i] = Math.min(vC[i], Math.sqrt(vAllow[(i + 1) % N] ** 2 + 2 * 11 * SEG)); }
+  }
+  const RIVAL_SKILL = [0.86, 0.93, 1.0], RIVAL_LANE = [4.5, -4.5, 4.5], RIVAL_START = [0, -6, -12];
+  const rivals = RIVAL_SKILL.map((skill, k) => ({ skill, prog: 0, off: 0, base: RIVAL_LANE[k], offT: 0, v: 0, obj: new THREE.Group(), pos: new THREE.Vector3(), dir: new THREE.Vector3(), id: null }));
+  rivals.forEach(r => rivalsG.add(r.obj));
+  const rivalIds = () => ['nitro', 'corsa', 'troc', 'ferrari'].filter(id => id !== CARS[carIdx].id).slice(0, 3);
+  function resetRivals() {
+    const ids = rivalIds();
+    rivals.forEach((r, k) => {
+      r.prog = RIVAL_START[k]; r.off = r.offT = r.base; r.v = 0;
+      if (r.id !== ids[k]) { r.id = ids[k]; r.obj.clear(); }
+      const ci = CARS.findIndex(c => c.id === r.id); if (ci >= 0) ensureModel(ci).catch(() => {});
+    });
+    S.prog = 0; placeRivals();
+  }
+  function placeRivals() {
+    for (const r of rivals) {
+      const f = (((S.idxStart + r.prog) % N) + N) % N, i0 = Math.floor(f), i1 = (i0 + 1) % N, u = f - i0;
+      r.pos.copy(pts[i0]).lerp(pts[i1], u).addScaledVector(nors[i0], r.off);
+      r.dir.copy(tans[i0]).lerp(tans[i1], u).normalize();
+      r.obj.position.copy(r.pos); r.obj.rotation.y = Math.atan2(r.dir.x, r.dir.z);
+      if (!r.obj.children.length && carCache[r.id]) {
+        const m = carCache[r.id].root.clone(true), pm = paint.clone(); pm.color.setHex(PAINTS[(Math.random() * PAINTS.length) | 0].c);
+        m.traverse(o => { if (o.isMesh && o.material === paint) o.material = pm; }); r.obj.add(m);
+      }
+    }
+  }
+  function rivalsStep(dt, playerLat) {
+    const go = S.phase === 'race';
+    for (const r of rivals) {
+      const idx = Math.floor((((S.idxStart + r.prog) % N) + N) % N);
+      let target = Math.min(r.skill * MAX_FWD, vAllow[idx] * r.skill);
+      // the player just ahead in our line: go round, or wait
+      const gap = (S.prog - r.prog) * SEG;
+      if (gap > 0 && gap < 16 && Math.abs(playerLat - r.off) < 2.8) {
+        r.offT = playerLat > 0 ? Math.max(-6, playerLat - 4.5) : Math.min(6, playerLat + 4.5);
+        if (gap < 7) target = Math.min(target, Math.abs(S.speed) * 0.95);
+      } else if (gap < -10 || gap > 30) r.offT = r.base;
+      for (const o of rivals) if (o !== r) { const g2 = (o.prog - r.prog) * SEG; if (g2 > 0 && g2 < 7 && Math.abs(o.off - r.off) < 2.2) target = Math.min(target, o.v * 0.97); }
+      if (!go) target = 0;
+      r.v += Math.max(-14 * dt, Math.min(ACCEL * 0.85 * dt, target - r.v));
+      r.prog += r.v * dt / SEG;
+      r.off += Math.max(-2.2 * dt, Math.min(2.2 * dt, r.offT - r.off));
+    }
+    placeRivals();
+    // bumping
+    for (const r of rivals) {
+      const dx = S.pos.x - r.pos.x, dz = S.pos.z - r.pos.z;
+      const along = dx * r.dir.x + dz * r.dir.z, lat = dx * r.dir.z - dz * r.dir.x;
+      const pa = 4.4 - Math.abs(along), pl = 1.85 - Math.abs(lat);
+      if (pa > 0 && pl > 0) {
+        if (pa < pl) { S.pos.x += r.dir.x * pa * Math.sign(along || 1); S.pos.z += r.dir.z * pa * Math.sign(along || 1); }
+        else { S.pos.x += r.dir.z * pl * Math.sign(lat || 1); S.pos.z -= r.dir.x * pl * Math.sign(lat || 1); }
+        S.speed *= 0.75;
+      }
+    }
+    const rank = 1 + rivals.filter(r => r.prog > S.prog).length;
+    $('rank').textContent = rank + ' / ' + (rivals.length + 1);
+  }
   // ---------- State ----------
   const S = {
     pos: new THREE.Vector3(), heading: 0, speed: 0, steer: 0, idx: 0,
@@ -2078,14 +2339,15 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     if (S.mode === 'cruise') {
       { const k = 6, q = hwPts[k], t = hwTan[k]; S.pos.set(q.x, q.y, q.z).addScaledVector(hwNor[k], -3.6); S.heading = Math.atan2(t.x, t.z); hwIdx = -1; }
       S.speed = 0; S.steer = 0; S.phase = 'free'; S.countT = -1; S.lastShown = null;
-      resetRules(); $('over').hidden = true;
+      resetRules(); $('over').hidden = true; clearEmergencies(); emgTimer = 50 + Math.random() * 30;
       $('count').textContent = '';
       camPos.copy(S.pos).add(new THREE.Vector3(-Math.sin(S.heading) * 12, 5, -Math.cos(S.heading) * 12));
       return;
     }
     const i = N - 6;
     S.pos.copy(pts[i]); S.heading = Math.atan2(tans[i].x, tans[i].z);
-    S.speed = 0; S.steer = 0; S.idx = i; S.lap = 1; S.half = false; S.last = null;
+    S.speed = 0; S.steer = 0; S.idx = i; S.idxStart = i; S.lap = 1; S.half = false; S.last = null;
+    resetRivals();
     S.phase = 'count'; S.countT = 3.5; S.lastShown = null;
     camPos.copy(S.pos).add(new THREE.Vector3(-Math.sin(S.heading) * 12, 5, -Math.cos(S.heading) * 12));
   }
@@ -2119,6 +2381,9 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     const rb = ctx.createBiquadFilter(); rb.type = 'lowpass'; rb.frequency.value = 260;
     A.rumble = ctx.createGain(); A.rumble.gain.value = 0;
     noise.connect(rb).connect(A.rumble).connect(A.master);
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2500;
+    A.rainG = ctx.createGain(); A.rainG.gain.value = weather === 'rain' ? 0.16 : 0;
+    noise.connect(hp).connect(A.rainG).connect(A.master);
     noise.start();
   }
   function beep(freq, dur, when = 0, vol = 0.35) {
@@ -2203,6 +2468,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
     renderer.shadowMap.type = low ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
     scene.fog.far = low ? 600 : 900;
+    if (typeof weather !== 'undefined' && weather !== 'clear') applyWeather();
     camera.far = low ? 5200 : 6000; camera.updateProjectionMatrix();
     scene.traverse(o => { if (o.material) o.material.needsUpdate = true; });
     const el = document.getElementById('mQualityName'); if (el) el.textContent = low ? 'Grafik: Düşük (hızlı)' : 'Grafik: Yüksek';
@@ -2222,6 +2488,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     if (e.code === 'KeyB') { nextPaint(); refreshMenu(); }
     if (e.code === 'KeyG') toggleQuality();
     if (e.code === 'KeyN') toggleNight();
+    if (e.code === 'KeyY') cycleWeather();
     if (e.code === 'KeyH' && !e.repeat && !paused && S.phase !== 'garage') hornOn();
     if (paused) return;
     if (map[e.code]) { keys[map[e.code]] = true; e.preventDefault(); }
@@ -2239,6 +2506,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   document.getElementById('mCam').addEventListener('click', cycleCam);
   document.getElementById('mQuality').addEventListener('click', toggleQuality);
   document.getElementById('mNight').addEventListener('click', toggleNight);
+  document.getElementById('mWeather').addEventListener('click', cycleWeather);
   document.getElementById('overRestart').addEventListener('click', restartCruise);
   document.getElementById('overGarage').addEventListener('click', () => { $('over').hidden = true; enterGarage(); });
   document.getElementById('mSound').addEventListener('click', () => { initAudio(); setMute(!A.muted); refreshMenu(); if (paused && A.ctx) A.ctx.suspend(); });
@@ -2298,7 +2566,8 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
 
     // longitudinal
     if (gas) S.speed += ACCEL * Math.max(0, 1 - (Math.max(0, S.speed) / MAX_FWD) ** 2) * dt;
-    if (brake) S.speed -= (S.speed > 0.5 ? BRAKE : ACCEL * 0.6) * dt;
+    const wet = weather === 'rain';
+    if (brake) S.speed -= (S.speed > 0.5 ? BRAKE * (wet ? 0.6 : 1) : ACCEL * 0.6) * dt;
     if (!gas && !brake) S.speed -= Math.sign(S.speed) * Math.min(Math.abs(S.speed), ROLL * dt);
     if (!gas) S.speed -= DRAG * S.speed * Math.abs(S.speed) * dt;
     if (keys.hand) S.speed -= Math.sign(S.speed) * Math.min(Math.abs(S.speed), 18 * dt);
@@ -2312,14 +2581,14 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     const target = (keys.left ? 1 : 0) - (keys.right ? 1 : 0);
     S.steer += (target - S.steer) * Math.min(1, dt * 8);
     const sp = Math.abs(S.speed);
-    const grip = keys.hand ? 1.5 : 1;
+    const grip = (keys.hand ? 1.5 : 1) * (wet && sp > 15 ? 0.78 : 1);
     const turnRate = 2.1 * grip * Math.min(1, sp / 8) / (1 + sp / 45);
     S.heading += S.steer * turnRate * Math.sign(S.speed) * dt;
 
     S.pos.x += Math.sin(S.heading) * S.speed * dt;
     S.pos.z += Math.cos(S.heading) * S.speed * dt;
 
-    if (cruise) { lightsStep(); fountainStep(dt); policeStep(dt); trafficStep(dt); pedStep(dt); cruiseCollide(); hwFollow(dt); redLightCheck(); rulesStep(dt); }
+    if (cruise) { lightsStep(); fountainStep(dt); policeStep(dt); trafficStep(dt); emergencyStep(dt); pedStep(dt); cruiseCollide(); hwFollow(dt); redLightCheck(); rulesStep(dt); }
     else {
     S.pos.y = 0; S.pitch = 0;
     // soft outer limit: push back towards track
@@ -2333,12 +2602,14 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
 
     // laps
     const prev = S.idx; S.idx = n2.i;
+    { let dI = S.idx - prev; if (dI > N / 2) dI -= N; if (dI < -N / 2) dI += N; S.prog += dI; }
+    rivalsStep(dt, n2.lat);
     if (S.idx > N * 0.4 && S.idx < N * 0.6) S.half = true;
     if (racing && prev > N * 0.9 && S.idx < N * 0.1) {
       if (S.half) {
         const t = clock - S.lapStart;
         S.last = t;
-        let msg = `Tur ${S.lap}: ${fmt(t)}`;
+        let msg = `Tur ${S.lap}: ${fmt(t)} · ${$('rank').textContent.split(' ')[0]}. sıra`;
         const isBest = S.best == null || t < S.best;
         if (isBest) { S.best = t; msg += '  En iyi!'; try { localStorage.setItem('pistBest', String(t)); } catch (e) {} }
         toast(msg); lapChime(isBest);
@@ -2357,6 +2628,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     drawMinimap();
     $('offroad').textContent = off ? 'Pist dışı' : '';
     audioUpdate(off, gas, racing);
+    rainStep();
 
     // car visuals
     car.position.copy(S.pos);
