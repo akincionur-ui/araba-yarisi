@@ -131,7 +131,7 @@
     <button id="mWeather" type="button"><span id="mWeatherName">Hava: Açık</span> <kbd>Y</kbd></button>
     <button id="mNight" type="button"><span id="mNightName">Saat: Gündüz</span> <kbd>N</kbd></button>
     <button id="mSound" type="button"><span id="mSoundName">Ses: açık</span> <kbd>M</kbd></button>
-    <p class="credits">Araba modelleri Sketchfab'dan, CC BY 4.0: Ferrari 458 (vicent091036), Dodge Nitro (Carrules501), Opel Corsa ve VW T-Roc (niev), VW T1 Minibüs (jesseroberts). Gökyüzü ışığı ve dokular: Poly Haven ve three.js örnekleri.</p>
+    <p class="credits">Araba modelleri Sketchfab'dan, CC BY 4.0: Ferrari 458 (vicent091036), Dodge Nitro (Carrules501), Opel Corsa ve VW T-Roc (niev), VW T1 Minibüs (jesseroberts), Ford Mustang 1965 (Kristian LaGrange), Ford Mustang 1969 (vecarz). Gökyüzü ışığı ve dokular: Poly Haven ve three.js örnekleri.</p>
   </div>
 </div>
 
@@ -593,6 +593,12 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     { id: 'van', name: 'VW T1 Minibüs', vmax: 36, accel: 5, file: 'assets/van.glb.b64.txt', paint: 0x1f9a9e, length: 4.28, flip: false,
       paintMats: ['Body_Bottom1'], chromeMats: [], glassMats: [],
       credit: 'Model: <a href="https://sketchfab.com/3d-models/718f8f0185bb4ce1b34242796b19418c" target="_blank" rel="noopener">jesseroberts</a>, CC BY 4.0' },
+    { id: 'mustang65', name: 'Ford Mustang 1965 Cabrio', vmax: 55, accel: 7.5, file: 'assets/mustang65.glb.b64.txt', paint: 0x1c2a5a, length: 4.61, flip: false,
+      paintMats: [], chromeMats: [], glassMats: [],
+      credit: 'Model: <a href="https://sketchfab.com/3d-models/05f2a294087541ab82f681136d134344" target="_blank" rel="noopener">Kristian LaGrange</a>, CC BY 4.0' },
+    { id: 'mustang69', name: 'Ford Mustang 1969 Yarış', vmax: 66, accel: 10, file: 'assets/mustang69.glb.b64.txt', paint: 0xc9a227, length: 4.76, flip: false,
+      paintMats: [], chromeMats: ['chrome'], glassMats: ['windowglass', 'clearglass'], wheelMats: ['tire'],
+      credit: 'Model: <a href="https://sketchfab.com/3d-models/723f3868359b4caa90ec639d27ccf06d" target="_blank" rel="noopener">vecarz</a>, CC BY 4.0' }
   ];
   PAINTS.push({ name: 'Turuncu', c: 0xc4561d }, { name: 'Turkuaz', c: 0x1f9a9e });
   const rubberMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 });
@@ -2257,11 +2263,20 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   }
   const RACE_LAPS = 3;
   function finishRace() {
-    const rank = 1 + rivals.filter(r => r.prog > S.prog).length;
+    const now = clock - S.raceT0;
+    // everyone's time: finished rivals exactly, the rest estimated from where they are now
+    const rows = [{ name: 'Sen', t: now, me: true }].concat(rivals.map(r => {
+      const name = (CARS.find(c => c.id === r.id) || {}).name || 'Rakip';
+      if (r.finish != null) return { name, t: r.finish };
+      const left = (6 + RACE_LAPS * N - r.prog) * SEG;
+      return { name, t: now + left / Math.max(r.v, 25), est: true };
+    })).sort((a, b) => a.t - b.t);
+    const rank = rows.findIndex(r => r.me) + 1;
     S.phase = 'over';
-    const total = S.laps.reduce((a, b) => a + b, 0);
     $('overTitle').textContent = rank === 1 ? '🏆 KAZANDIN!' : `YARIŞ BİTTİ: ${rank}. OLDUN`;
-    $('overText').innerHTML = S.laps.map((t, k) => `${k + 1}. tur: ${fmt(t)}`).join('<br>') + `<br><b>Toplam: ${fmt(total)}</b>`;
+    $('overText').innerHTML = '<table style="width:100%;border-collapse:collapse;margin-bottom:8px">' + rows.map((r, k) =>
+      `<tr style="${r.me ? 'color:#ffcc33;font-weight:700' : ''}"><td style="padding:2px 6px 2px 0">${k + 1}.</td><td>${r.name}</td><td style="text-align:right;font-variant-numeric:tabular-nums">${r.est ? '≈ ' : ''}${fmt(r.t)}</td></tr>`).join('') + '</table>' +
+      '<small>Tur sürelerin: ' + S.laps.map(fmt).join(' · ') + '</small>';
     $('over').hidden = false;
     if (rank === 1) [523, 659, 784, 1046].forEach((f, k) => beep(f, 0.25, k * 0.14, 0.25)); else lapChime(false);
   }
@@ -2290,7 +2305,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   function resetRivals() {
     const ids = rivalIds();
     rivals.forEach((r, k) => {
-      r.prog = RIVAL_START[k]; r.off = r.offT = r.base; r.v = 0;
+      r.prog = RIVAL_START[k]; r.off = r.offT = r.base; r.v = 0; r.finish = null;
       if (r.id !== ids[k]) { r.id = ids[k]; r.obj.clear(); }
       const ci = CARS.findIndex(c => c.id === r.id); if (ci >= 0) ensureModel(ci).catch(() => {});
     });
@@ -2337,9 +2352,11 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       if (pa > 0 && pl > 0) {
         if (pa < pl) { S.pos.x += r.dir.x * pa * Math.sign(along || 1); S.pos.z += r.dir.z * pa * Math.sign(along || 1); }
         else { S.pos.x += r.dir.z * pl * Math.sign(lat || 1); S.pos.z -= r.dir.x * pl * Math.sign(lat || 1); }
-        S.speed *= 0.75;
+        S.speed *= 0.8; r.v *= 0.8;   // both of you lose speed
       }
     }
+    // rivals crossing the finish
+    if (S.phase === 'race') for (const r of rivals) if (r.finish == null && r.prog >= 6 + RACE_LAPS * N) r.finish = clock - S.raceT0;
     const rank = 1 + rivals.filter(r => r.prog > S.prog).length;
     $('rank').textContent = rank + ' / ' + (rivals.length + 1);
   }
@@ -2571,7 +2588,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       const shown = S.countT > 0.5 ? (c > 0 && c <= 3 ? c : '') : 'BAŞLA!';
       if (shown !== S.lastShown) { if (shown === 'BAŞLA!') beep(880, 0.5); else if (shown) beep(440, 0.18); S.lastShown = shown; }
       $('count').textContent = shown;
-      if (S.countT <= 0.5 && S.phase === 'count') { S.phase = 'race'; S.lapStart = clock; }
+      if (S.countT <= 0.5 && S.phase === 'count') { S.phase = 'race'; S.lapStart = clock; S.raceT0 = clock; }
     } else if (S.countT > -0.6) { S.countT -= dt; if (S.countT <= -0.6) $('count').textContent = ''; }
 
     const cruise = S.mode === 'cruise';
@@ -2587,9 +2604,9 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     if (!gas && !brake) S.speed -= Math.sign(S.speed) * Math.min(Math.abs(S.speed), ROLL * dt);
     if (!gas) S.speed -= DRAG * S.speed * Math.abs(S.speed) * dt;
     if (keys.hand) S.speed -= Math.sign(S.speed) * Math.min(Math.abs(S.speed), 18 * dt);
-    if (off) {
-      S.speed -= S.speed * 1.4 * dt;
-      if (S.speed > 20) S.speed = Math.max(20, S.speed - 25 * dt);
+    if (off) {   // grass and kerbs slow you a bit, they don't stop you dead
+      S.speed -= S.speed * 0.45 * dt;
+      if (S.speed > 38) S.speed = Math.max(38, S.speed - 10 * dt);
     }
     S.speed = Math.max(-MAX_REV, Math.min(MAX_FWD, S.speed));
 
