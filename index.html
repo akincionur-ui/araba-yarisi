@@ -55,9 +55,9 @@
   #touch .grp { display: flex; gap: 10px; }
   #touch button { pointer-events: auto; width: 68px; height: 68px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.35); background: var(--hud-bg); color: var(--hud-fg); font-family: var(--font-display); font-size: 22px; font-weight: 700; touch-action: none; user-select: none; -webkit-user-select: none; }
   #touch button.on { background: rgba(255, 204, 51, 0.5); }
-  #mute { position: fixed; top: calc(150px + env(safe-area-inset-top, 0px)); left: max(16px, env(safe-area-inset-left, 0px)); border: 0; color: var(--hud-fg); font-family: var(--font-body); font-size: 13px; cursor: pointer; }
+  #mute { position: fixed; top: calc(198px + env(safe-area-inset-top, 0px)); left: max(16px, env(safe-area-inset-left, 0px)); border: 0; color: var(--hud-fg); font-family: var(--font-body); font-size: 13px; cursor: pointer; }
   #mute:focus-visible, #pauseBtn:focus-visible, .menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  #pauseBtn { position: fixed; top: calc(150px + env(safe-area-inset-top, 0px)); left: calc(max(16px, env(safe-area-inset-left, 0px)) + 150px); border: 0; color: var(--hud-fg); font-family: var(--font-body); font-size: 13px; cursor: pointer; }
+  #pauseBtn { position: fixed; top: calc(198px + env(safe-area-inset-top, 0px)); left: calc(max(16px, env(safe-area-inset-left, 0px)) + 150px); border: 0; color: var(--hud-fg); font-family: var(--font-body); font-size: 13px; cursor: pointer; }
   #pause { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(8, 11, 16, 0.6); backdrop-filter: blur(3px); padding: 16px; z-index: 5; }
   .menu { background: rgba(14, 18, 25, 0.92); border: 1px solid rgba(255,255,255,0.12); border-radius: 14px; padding: 22px; width: min(320px, 100%); display: grid; gap: 10px; }
   .menu h2 { margin: 0 0 6px; font-family: var(--font-display); font-size: 28px; letter-spacing: 0.04em; color: var(--accent); text-align: center; }
@@ -101,7 +101,8 @@
   <div class="row"><span class="label">Sıra</span><span class="val" id="rank">1 / 4</span></div>
   <div class="row"><span class="label">Şu an</span><span class="val" id="cur">0:00.000</span></div>
   <div class="row"><span class="label">Son tur</span><span class="val" id="last">–</span></div>
-  <div class="row"><span class="label">En iyi</span><span class="val" id="best">–</span></div>
+  <div class="row"><span class="label">En iyi tur</span><span class="val" id="best">–</span></div>
+  <div class="row"><span class="label">Rekor yarış</span><span class="val" id="bestRace">–</span></div>
 </div>
 
 <div id="help" class="hud panel">
@@ -2262,6 +2263,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     $('over').hidden = false;
   }
   const RACE_LAPS = 3;
+  let bestRace = null; try { const b = parseFloat(localStorage.getItem('pistBestRace')); if (b > 0) bestRace = b; } catch (e) {}
   function finishRace() {
     const now = clock - S.raceT0;
     // everyone's time: finished rivals exactly, the rest estimated from where they are now
@@ -2272,11 +2274,14 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       return { name, t: now + left / Math.max(r.v, 25), est: true };
     })).sort((a, b) => a.t - b.t);
     const rank = rows.findIndex(r => r.me) + 1;
+    const newRec = bestRace == null || now < bestRace;
+    if (newRec) { bestRace = now; try { localStorage.setItem('pistBestRace', String(now)); } catch (e) {} }
     S.phase = 'over';
     $('overTitle').textContent = rank === 1 ? '🏆 KAZANDIN!' : `YARIŞ BİTTİ: ${rank}. OLDUN`;
     $('overText').innerHTML = '<table style="width:100%;border-collapse:collapse;margin-bottom:8px">' + rows.map((r, k) =>
       `<tr style="${r.me ? 'color:#ffcc33;font-weight:700' : ''}"><td style="padding:2px 6px 2px 0">${k + 1}.</td><td>${r.name}</td><td style="text-align:right;font-variant-numeric:tabular-nums">${r.est ? '≈ ' : ''}${fmt(r.t)}</td></tr>`).join('') + '</table>' +
-      '<small>Tur sürelerin: ' + S.laps.map(fmt).join(' · ') + '</small>';
+      '<small>Tur sürelerin: ' + S.laps.map(fmt).join(' · ') + '</small><br>' +
+      `<b>${newRec ? '⭐ Yeni rekor yarış: ' + fmt(now) : 'Rekor yarış: ' + fmt(bestRace)}</b> · En iyi tur: ${fmt(S.best)}`;
     $('over').hidden = false;
     if (rank === 1) [523, 659, 784, 1046].forEach((f, k) => beep(f, 0.25, k * 0.14, 0.25)); else lapChime(false);
   }
@@ -2352,7 +2357,13 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       if (pa > 0 && pl > 0) {
         if (pa < pl) { S.pos.x += r.dir.x * pa * Math.sign(along || 1); S.pos.z += r.dir.z * pa * Math.sign(along || 1); }
         else { S.pos.x += r.dir.z * pl * Math.sign(lat || 1); S.pos.z -= r.dir.x * pl * Math.sign(lat || 1); }
-        S.speed *= 0.8; r.v *= 0.8;   // both of you lose speed
+        // one knock per contact, not every frame: the car behind drops to the speed of the one in front, side swipes cost a little
+        if (clock - (r.hitT || -9) > 0.6) {
+          r.hitT = clock;
+          if (pa < pl) {
+            if (along < 0) S.speed = Math.min(S.speed, r.v * 0.97); else r.v = Math.min(r.v, S.speed * 0.97);
+          } else { S.speed *= 0.95; r.v *= 0.95; }
+        }
       }
     }
     // rivals crossing the finish
@@ -2658,6 +2669,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     $('cur').textContent = fmt(racing ? clock - S.lapStart : 0);
     $('last').textContent = fmt(S.last);
     $('best').textContent = fmt(S.best);
+    $('bestRace').textContent = fmt(bestRace);
     $('speed').textContent = Math.round(Math.abs(S.speed) * 3.6);
     drawMinimap();
     $('offroad').textContent = off ? 'Pist dışı' : '';
