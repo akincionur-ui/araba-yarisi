@@ -80,6 +80,18 @@
   /* speed vignette and lines */
   #fx { position: fixed; inset: 0; pointer-events: none; z-index: 1; }
   #vig { position: fixed; inset: 0; pointer-events: none; z-index: 1; background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.55) 100%); opacity: 0; }
+  /* garage tuning */
+  #gModBtn { font-family: var(--font-body); font-size: 14px; font-weight: 700; padding: 10px 12px; border-radius: 9px; border: 2px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.06); color: inherit; cursor: pointer; text-align: left; }
+  #gModBtn[aria-expanded="true"] { border-color: var(--accent); }
+  #gMods { display: grid; gap: 6px; padding: 10px; border-radius: 10px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); }
+  #gMods .mrow { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; font-size: 14px; }
+  #gMods .mrow small { display: block; color: var(--hud-dim); font-size: 12px; }
+  #gMods .pips { display: flex; gap: 4px; }
+  #gMods .pips i { width: 16px; height: 8px; border-radius: 2px; background: rgba(255,255,255,0.15); transform: skewX(-20deg); }
+  #gMods .pips i.on { background: var(--accent); }
+  #gMods button { font-family: var(--font-body); font-size: 13px; font-weight: 700; padding: 7px 10px; border-radius: 7px; border: 0; background: var(--accent); color: #1a1405; cursor: pointer; min-width: 92px; }
+  #gMods button:disabled { background: rgba(255,255,255,0.12); color: var(--hud-dim); cursor: default; }
+  #gMods .stat { font-size: 12px; color: var(--hud-dim); }
   #drift { position: fixed; top: calc(70px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); font-family: var(--font-display); font-weight: 700; font-size: 30px; color: #ffcc33; text-shadow: 0 3px 14px rgba(0,0,0,0.6); pointer-events: none; z-index: 3; }
   #offroad { color: var(--accent); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; min-height: 1.2em; }
   #center { inset: 0; display: grid; place-items: center; }
@@ -223,7 +235,7 @@
     <button id="mSteer" type="button"><span id="mSteerName">Direksiyon: Kaydır</span> <kbd>dokunmatik</kbd></button>
     <button id="mNight" type="button"><span id="mNightName">Saat: Gündüz</span> <kbd>N</kbd></button>
     <button id="mSound" type="button"><span id="mSoundName">Ses: açık</span> <kbd>M</kbd></button>
-    <p class="credits">Araba modelleri Sketchfab'dan, CC BY 4.0: Ferrari 458 (vicent091036), Dodge Nitro (Carrules501), Opel Corsa ve VW T-Roc (niev), VW T1 Minibüs (jesseroberts), Ford Mustang 1965 (Kristian LaGrange), Ford Mustang 1969 (vecarz). Gökyüzü ışığı ve dokular: Poly Haven ve three.js örnekleri.</p>
+    <p class="credits">Araba modelleri Sketchfab'dan, CC BY 4.0: Ferrari 458 (vicent091036), Dodge Nitro (Carrules501), Opel Corsa ve VW T-Roc (niev), VW T1 Minibüs (jesseroberts), Ford Mustang 1965 (Kristian LaGrange), Ford Mustang 1969 (vecarz), McLaren 570S ve Ferrari SF90 XX (Ddiaz Design), Lamborghini Huracán EVO (Galaxy Car Showroom); son üçü küçültüldü. Gökyüzü ışığı ve dokular: Poly Haven ve three.js örnekleri.</p>
   </div>
 </div>
 
@@ -234,6 +246,8 @@
     <div class="gcolors"><div id="gSwatches" class="gswatches"></div>
       <label class="gcustom">Özel renk <input id="gColor" type="color" value="#b0000a"></label></div>
     <div id="gMode" class="gmode" role="group" aria-label="Oyun modu"><button type="button" data-mode="race">Yarış<small>Tur ve süre</small></button><button type="button" data-mode="cruise">Şehir gezintisi<small>Okul, dükkanlar, serbest sürüş</small></button></div>
+    <button id="gModBtn" type="button" aria-expanded="false">🔧 Modifiye<small style="display:block;font-weight:400;font-size:12px;color:var(--hud-dim)">Motor, lastik, nitro, spoiler, neon, cam filmi</small></button>
+    <div id="gMods" hidden></div>
     <div id="gChamp" class="gmode" role="group" aria-label="Yarış türü"><button type="button" data-champ="0">Tek yarış<small>Seçtiğin pistte 3 tur</small></button><button type="button" data-champ="1">🏆 Şampiyona<small>4 pist art arda, puan tablosu, kupa</small></button></div>
     <div id="gTrack" class="gmode" role="group" aria-label="Pist"></div>
     <button id="gStart" class="gstart" type="button">Yarışa başla <kbd>Enter</kbd></button>
@@ -1065,16 +1079,38 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       credit: 'Model: <a href="https://sketchfab.com/3d-models/05f2a294087541ab82f681136d134344" target="_blank" rel="noopener">Kristian LaGrange</a>, CC BY 4.0' },
     { id: 'mustang69', name: 'Ford Mustang 1969 Yarış', vmax: 66, accel: 10, file: 'assets/mustang69.glb.b64.txt', paint: 0xc9a227, length: 4.76, flip: false,
       paintMats: [], chromeMats: ['chrome'], glassMats: ['windowglass', 'clearglass'], wheelMats: ['tire'],
-      credit: 'Model: <a href="https://sketchfab.com/3d-models/723f3868359b4caa90ec639d27ccf06d" target="_blank" rel="noopener">vecarz</a>, CC BY 4.0' }
+      credit: 'Model: <a href="https://sketchfab.com/3d-models/723f3868359b4caa90ec639d27ccf06d" target="_blank" rel="noopener">vecarz</a>, CC BY 4.0' },
+    { id: 'mc570s', name: 'McLaren 570S', vmax: 82, accel: 13, file: 'assets/mc570s.glb.b64.txt', paint: 0xff7a00, length: 4.53, flip: false,
+      paintMats: ['fullM_CarPaint_Max1'], chromeMats: [], glassMats: ['fullM_Glass_WindowFront_Low1'], wheelMats: ['WheelspolySurface1SG1', 'fullM_Rim_Main_Max1', 'fullM_Rim_Secondary_Max1', 'fullM_Rim_NoTint_Max1', 'WheelspolySurface589SG1'],
+      credit: 'Model: "2016 McLaren 570S Coupe" <a href="https://skfb.ly/prYpp" target="_blank" rel="noopener">Ddiaz Design</a>, CC BY 4.0 (küçültüldü)' },
+    { id: 'huracan', name: 'Lamborghini Huracán EVO', vmax: 86, accel: 13.5, file: 'assets/huracan.glb.b64.txt', paint: 0x2f9e3a, length: 4.52, flip: true,
+      paintMats: ['Huracan_EVO_Paint'], chromeMats: [], glassMats: ['Glass_Parts'], wheelMats: ['Meshestyremichelind1_diff', 'Meshesalcnt0011_diff', 'Meshesalcnt0021_diff', 'Caliper_Color'],
+      credit: 'Model: "2019 Lamborghini Huracán EVO" <a href="https://skfb.ly/pBZKS" target="_blank" rel="noopener">Galaxy Car Showroom</a>, CC BY 4.0 (küçültüldü)' },
+    { id: 'sf90', name: 'Ferrari SF90 XX Stradale', vmax: 91, accel: 14.5, file: 'assets/sf90.glb.b64.txt', paint: 0xc8102e, length: 4.71, flip: false,
+      paintMats: ['Ferrari_SF90XXStradale_2024Paint_Material'], chromeMats: [], glassMats: ['Ferrari_SF90XXStradale_2024Window_Material'], wheelMats: ['Ferrari_SF90XXStradale_2024_Wheel1A_3D_3DWheel1C_Material1'],
+      credit: 'Model: "2023 Ferrari SF90 XX Stradale" <a href="https://skfb.ly/pqNIt" target="_blank" rel="noopener">Ddiaz Design</a>, CC BY 4.0 (küçültüldü)' }
   ];
   // ---------- Money: earned in races, drifts and clean driving; buys new cars ----------
-  const PRICES = { troc: 0, nitro: 0, corsa: 0, van: 0, crafter: 3000, mustang65: 4000, mustang69: 7000, ferrari: 12000, bmwm4: 15000 };
+  const PRICES = { troc: 0, nitro: 0, corsa: 0, van: 0, crafter: 3000, mustang65: 4000, mustang69: 7000, ferrari: 12000, bmwm4: 15000, mc570s: 20000, huracan: 26000, sf90: 35000 };
   let money = 3000, owned = new Set(['nitro', 'corsa', 'troc', 'van']);
   try {
     const m = parseInt(localStorage.getItem('pistPara'), 10); if (m >= 0) money = m;
     const o = JSON.parse(localStorage.getItem('pistGaraj') || 'null'); if (Array.isArray(o)) owned = new Set(o);
   } catch (e) {}
   const tl = n => n.toLocaleString('tr-TR') + ' ₺';
+  // tuning: per car, saved with the money
+  const MODS = [
+    { k: 'engine', name: 'Motor', desc: 'Son hız ve hızlanma', max: 3, cost: [1500, 3000, 5000] },
+    { k: 'tires', name: 'Lastik', desc: 'Virajda yol tutuş', max: 3, cost: [1000, 2000, 3500] },
+    { k: 'nitro', name: 'Nitro tüpü', desc: 'Daha uzun nitro, hızlı dolum', max: 3, cost: [1000, 2000, 3000] },
+    { k: 'spoiler', name: 'Spoiler', desc: 'Arka kanat, biraz daha yol tutuş', max: 1, cost: [2000] },
+    { k: 'neon', name: 'Neon ışık', desc: 'Aracın altında renkli ışık', max: 1, cost: [1500], color: true },
+    { k: 'tint', name: 'Cam filmi', desc: 'Koyu camlar', max: 1, cost: [500] }
+  ];
+  let mods = {};
+  try { mods = JSON.parse(localStorage.getItem('pistMods') || '{}') || {}; } catch (e) {}
+  const modOf = id => (mods[id] = mods[id] || {});
+  const saveMods = () => { try { localStorage.setItem('pistMods', JSON.stringify(mods)); } catch (e) {} };
   const isOwned = id => owned.has(id) || !PRICES[id];
   function saveMoney() {
     try { localStorage.setItem('pistPara', String(money)); localStorage.setItem('pistGaraj', JSON.stringify([...owned])); } catch (e) {}
@@ -1215,6 +1251,41 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       const n = new THREE.Mesh(fg, inner); n.position.x = x; n.scale.set(0.5, 0.5, 0.6); n.userData.z = 0.6; flames.add(n);
     }
   }
+  // tuning visuals: a carbon rear wing and an underglow, both sized to the car
+  const modG = new THREE.Group(); car.add(modG);
+  const carbonMat = new THREE.MeshStandardMaterial({ color: 0x141518, roughness: 0.35, metalness: 0.3 });
+  const neonMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4,
+    map: (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d'); const gr = g.createRadialGradient(64, 64, 4, 64, 64, 64); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.5, 'rgba(255,255,255,0.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); return new THREE.CanvasTexture(c); })() });
+  let BASE_FWD = 75, GRIP_MOD = 1, NITRO_T = 3.5, NITRO_FILL = 1;
+  const glassTint0 = { set: false };
+  function applyMods(id) {
+    const cfg = CARS.find(c => c.id === id), m = modOf(id);
+    BASE_FWD = cfg.vmax;
+    MAX_FWD = cfg.vmax * (1 + 0.05 * (m.engine || 0)); ACCEL = cfg.accel * (1 + 0.08 * (m.engine || 0));
+    GRIP_MOD = (1 + 0.06 * (m.tires || 0)) * (m.spoiler ? 1.04 : 1);
+    NITRO_T = 3.5 + (m.nitro || 0); NITRO_FILL = 1 + 0.3 * (m.nitro || 0);
+    if (!glassTint0.set) { glassTint0.set = true; glassTint0.c = glassMat.color.clone(); glassTint0.o = glassMat.opacity; }
+    glassMat.color.copy(glassTint0.c).multiplyScalar(m.tint ? 0.25 : 1); glassMat.opacity = m.tint ? Math.max(0.85, glassTint0.o) : glassTint0.o;
+    modG.clear();
+    const e = carCache[id]; if (!e) return;
+    const box = new THREE.Box3().setFromObject(e.root), len = cfg.length || 4.5, w = len * 0.42, h = Math.min(1.5, box.max.y - box.min.y);
+    if (m.spoiler) {
+      const zb = -len / 2 + 0.32, yt = h * 0.86 + 0.14;
+      const wing = new THREE.Mesh(new THREE.BoxGeometry(w * 0.92, 0.05, 0.42), carbonMat); wing.position.set(0, yt, zb); wing.rotation.x = -0.12;
+      const plateG = new THREE.BoxGeometry(0.03, 0.22, 0.46);
+      for (const sx of [-1, 1]) {
+        const plate = new THREE.Mesh(plateG, carbonMat); plate.position.set(sx * w * 0.46, yt, zb); modG.add(plate);
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.3, 0.12), carbonMat); leg.position.set(sx * w * 0.28, yt - 0.17, zb + 0.05); modG.add(leg);
+      }
+      modG.add(wing);
+    }
+    if (m.neon) {
+      neonMat.color.setHex(m.neonColor || 0x00e5ff);
+      const glow = new THREE.Mesh(new THREE.PlaneGeometry(w * 1.5, len * 1.15).rotateX(-Math.PI / 2), neonMat);
+      glow.position.y = 0.06; glow.renderOrder = 3; modG.add(glow);
+    }
+    modG.traverse(o => { if (o.isMesh && o.material === carbonMat) o.castShadow = true; });
+  }
   function mountCar(id) {
     const cfg = CARS.find(c => c.id === id);
     flames.position.set(0, 0.38, -(cfg.length || 4.55) / 2 + 0.05);
@@ -1224,6 +1295,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     body.add(e.root);
     wheels = e.wheels;
     if (aoShadow) aoShadow.visible = !!e.ao;
+    applyMods(id);
   }
 
   // soft contact shadow baked for the Ferrari model
@@ -2901,7 +2973,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       // keep it close: a rival far behind you pushes harder, one far ahead eases off
       const lead = (r.prog - S.prog) * SEG;
       const band = lead < -120 ? 1.18 : lead < -40 ? 1.08 : lead > 200 ? 0.84 : lead > 70 ? 0.92 : 1;   // they wait for you if you fall behind
-      let target = Math.min(r.skill * band * MAX_FWD, vAllow[idx] * r.skill * band);
+      let target = Math.min(r.skill * band * BASE_FWD, vAllow[idx] * r.skill * band);
       // the player just ahead in our line: go round, or wait
       const gap = (S.prog - r.prog) * SEG;
       if (gap > 0 && gap < 16 && Math.abs(playerLat - r.off) < 2.8) {
@@ -3387,8 +3459,8 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     const boosting = racing && keys.nitro && S.nitro > 0.01 && S.speed > 2;
     if (boosting) {
       if (!S.boosting) beep(160, 0.4, 0, 0.18);
-      S.nitro = Math.max(0, S.nitro - dt / 3.5); S.speed += ACCEL * 1.1 * dt;
-    } else if (racing) S.nitro = Math.min(1, S.nitro + dt * 0.012);
+      S.nitro = Math.max(0, S.nitro - dt / NITRO_T); S.speed += ACCEL * 1.1 * dt;
+    } else if (racing) S.nitro = Math.min(1, S.nitro + dt * 0.012 * NITRO_FILL);
     S.boosting = boosting;
     // longitudinal
     if (gas) S.speed += ACCEL * Math.max(0, 1 - (Math.max(0, S.speed) / MAX_FWD) ** 2) * dt;
@@ -3416,7 +3488,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       if (dA * near.lat * -1 >= 0 || Math.abs(dA) > 0.05) S.heading += dA * Math.min(1, dt * 2.2 * ex);
     }
     const grip = (keys.hand ? 1.5 : 1) * (wet && sp > 15 ? 0.78 : 1);
-    const turnRate = 2.1 * grip * Math.min(1, sp / 8) / (1 + sp / 45);
+    const turnRate = 2.1 * grip * GRIP_MOD * Math.min(1, sp / 8) / (1 + sp / 45);
     S.heading += S.steer * turnRate * Math.sign(S.speed) * dt;
 
     S.pos.x += Math.sin(S.heading) * S.speed * dt;
@@ -3556,6 +3628,27 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     $('garage').hidden = false;
     refreshGarage();
   }
+  const NEONS = [0x00e5ff, 0xff2bd6, 0x39ff14, 0xffb000, 0xff2020];
+  function renderMods() {
+    const el = $('gMods'), c = CARS[carIdx], m = modOf(c.id);
+    if (!isOwned(c.id)) { el.innerHTML = '<div class="stat">Modifiye için önce bu arabayı satın al.</div>'; return; }
+    el.innerHTML = MODS.map(d => {
+      const lvl = m[d.k] ? (d.max > 1 ? m[d.k] : 1) : 0, maxed = lvl >= d.max, cost = maxed ? 0 : d.cost[lvl];
+      const pips = d.max > 1 ? `<span class="pips">${Array.from({ length: d.max }, (_, i) => `<i class="${i < lvl ? 'on' : ''}"></i>`).join('')}</span>` : `<span class="pips"><i class="${lvl ? 'on' : ''}"></i></span>`;
+      const btn = maxed ? (d.color ? `<button type="button" data-color="1">Renk değiştir</button>` : `<button type="button" disabled>Tamam ✓</button>`)
+        : `<button type="button" data-k="${d.k}" ${money < cost ? 'disabled' : ''}>${tl(cost)}</button>`;
+      return `<div class="mrow"><div>${d.name}<small>${d.desc}</small></div>${pips}${btn}</div>`;
+    }).join('') + `<div class="stat">Son hız ${Math.round(MAX_FWD * 3.6)} km/sa · Hızlanma ${ACCEL.toFixed(1)} · Yol tutuş ×${GRIP_MOD.toFixed(2)} · Nitro ${NITRO_T.toFixed(1)} sn</div>`;
+    el.querySelectorAll('button[data-k]').forEach(b => b.addEventListener('click', () => {
+      const d = MODS.find(x => x.k === b.dataset.k), lvl = m[d.k] ? (d.max > 1 ? m[d.k] : 1) : 0, cost = d.cost[lvl];
+      if (money < cost) return;
+      money -= cost; m[d.k] = d.max > 1 ? lvl + 1 : true; saveMoney(); saveMods(); applyMods(c.id);
+      toast(`${d.name} takıldı`); beep(660, 0.12, 0, 0.2); beep(990, 0.15, 0.1, 0.2); renderMods(); refreshGarage();
+    }));
+    el.querySelectorAll('button[data-color]').forEach(b => b.addEventListener('click', () => {
+      m.neonColor = NEONS[(NEONS.indexOf(m.neonColor || NEONS[0]) + 1) % NEONS.length]; saveMods(); applyMods(c.id); renderMods();
+    }));
+  }
   function garageAction() {
     const c = CARS[carIdx];
     if (!isOwned(c.id)) {
@@ -3598,6 +3691,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       document.getElementById('gColor').addEventListener('input', e => setPaintHex(parseInt(e.target.value.slice(1), 16)));
       document.getElementById('gStart').addEventListener('click', garageAction);
       document.querySelectorAll('#gChamp button').forEach(b => b.addEventListener('click', () => { champOn = b.dataset.champ === '1'; refreshGarage(); }));
+      $('gModBtn').addEventListener('click', () => { const open = $('gMods').hidden; $('gMods').hidden = !open; $('gModBtn').setAttribute('aria-expanded', String(open)); refreshGarage(); });
       document.querySelectorAll('#gMode button').forEach(b => b.addEventListener('click', () => { setMode(b.dataset.mode); enterGarage(); }));
       TRACKS.forEach(t => {
         const b = document.createElement('button'); b.type = 'button'; b.dataset.track = t.id;
@@ -3622,6 +3716,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     st.firstChild.textContent = !ok ? 'Araba yükleniyor… ' : !mine ? (money >= price ? `Satın al: ${tl(price)} ` : `Paran yetmiyor: ${tl(price)} `)
       : S.mode === 'cruise' ? 'Gezintiye başla ' : champOn ? 'Şampiyonaya başla ' : 'Yarışa başla ';
     $('gChamp').hidden = S.mode !== 'race';
+    if (!$('gMods').hidden) renderMods();
     document.querySelectorAll('#gChamp button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.champ === '1') === champOn)));
     document.querySelectorAll('#gMode button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === S.mode)));
     $('gTrack').hidden = S.mode !== 'race' || champOn;
