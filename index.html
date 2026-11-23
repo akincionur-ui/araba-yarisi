@@ -96,6 +96,24 @@
   #gCredit a { color: var(--hud-dim); }
   .menu kbd { font-family: var(--font-body); font-size: 12px; opacity: 0.65; font-weight: 400; }
   @media (pointer: coarse) { #touch { display: flex; } #help { display: none; } }
+  /* phones: a compact top-left panel, icon-only buttons */
+  @media (pointer: coarse) {
+    #times, #cruiseHud { min-width: 0; padding: 6px 10px; gap: 1px; }
+    #times .row:nth-child(n+4) { display: none; }
+    #times .label, #cruiseHud .label { font-size: 10px; }
+    #times .val { font-size: 13px; }
+    #times .lapnum { font-size: 16px; }
+    #cruiseHud .row:nth-child(2) { display: none; }
+    #cruiseHud .limit { width: 26px; height: 26px; font-size: 11px; border-width: 3px; }
+    #mute, #pauseBtn { top: calc(104px + env(safe-area-inset-top, 0px)); width: 40px; height: 36px; padding: 0; text-align: center; font-size: 16px; }
+    #pauseBtn { left: calc(max(16px, env(safe-area-inset-left, 0px)) + 48px); }
+    body.steer-drag #tLeft, body.steer-drag #tRight, body.steer-tilt #tLeft, body.steer-tilt #tRight { display: none; }
+    body.steer-drag #steerZone { display: block; }
+  }
+  #steerZone { display: none; position: fixed; left: 0; width: 50%; top: 40%; bottom: 0; touch-action: none; }
+  #wheel { position: absolute; left: max(24px, env(safe-area-inset-left, 0px)); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); width: 118px; height: 118px; opacity: 0.85; pointer-events: none; transition: opacity 0.2s; }
+  #steerZone.active #wheel { opacity: 1; }
+  #steerHint { position: absolute; left: max(150px, calc(env(safe-area-inset-left, 0px) + 150px)); bottom: calc(60px + env(safe-area-inset-bottom, 0px)); font-size: 12px; color: rgba(255,255,255,0.75); text-shadow: 0 1px 4px #000; pointer-events: none; }
   @media (max-width: 520px) { #speed { font-size: 34px; } #speedo { bottom: calc(100px + env(safe-area-inset-bottom, 0px)); } }
 </style>
 
@@ -138,6 +156,7 @@
     <button id="mCam" type="button"><span>Kamera: <span id="mCamName">Takip</span></span> <kbd>C</kbd></button>
     <button id="mQuality" type="button"><span id="mQualityName">Grafik: Yüksek</span> <kbd>G</kbd></button>
     <button id="mWeather" type="button"><span id="mWeatherName">Hava: Açık</span> <kbd>Y</kbd></button>
+    <button id="mSteer" type="button"><span id="mSteerName">Direksiyon: Kaydır</span> <kbd>dokunmatik</kbd></button>
     <button id="mNight" type="button"><span id="mNightName">Saat: Gündüz</span> <kbd>N</kbd></button>
     <button id="mSound" type="button"><span id="mSoundName">Ses: açık</span> <kbd>M</kbd></button>
     <p class="credits">Araba modelleri Sketchfab'dan, CC BY 4.0: Ferrari 458 (vicent091036), Dodge Nitro (Carrules501), Opel Corsa ve VW T-Roc (niev), VW T1 Minibüs (jesseroberts), Ford Mustang 1965 (Kristian LaGrange), Ford Mustang 1969 (vecarz). Gökyüzü ışığı ve dokular: Poly Haven ve three.js örnekleri.</p>
@@ -176,6 +195,10 @@
 <div id="center" class="hud"><div id="count"></div></div>
 <div id="toast"></div>
 
+<div id="steerZone" aria-label="Direksiyon: parmağını sağa sola kaydır">
+  <svg id="wheel" viewBox="-50 -50 100 100"><circle r="44" fill="rgba(14,18,25,0.55)" stroke="rgba(255,255,255,0.8)" stroke-width="7"/><circle r="10" fill="rgba(255,255,255,0.8)"/><path d="M-41 4 L-10 4 M10 4 L41 4 M0 12 L0 42" stroke="rgba(255,255,255,0.8)" stroke-width="7" stroke-linecap="round"/><rect x="-4" y="-50" width="8" height="12" rx="2" fill="#ffcc33"/></svg>
+  <div id="steerHint">← kaydır →</div>
+</div>
 <div id="touch">
   <div class="grp"><button id="tLeft" aria-label="Sola dön">◀</button><button id="tRight" aria-label="Sağa dön">▶</button></div>
   <div class="grp"><button id="tHorn" aria-label="Korna" style="font-size:26px">📯</button><button id="tNitro" aria-label="Nitro" style="font-size:24px">🔥</button><button id="tBrake" aria-label="Fren">▼</button><button id="tGas" aria-label="Gaz">▲</button></div>
@@ -2944,10 +2967,12 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     os.forEach(o => o.stop(t + 0.07)); A.horn = null;
   }
   function lapChime(best) { [660, 880, best ? 1320 : 990].forEach((f, k) => beep(f, 0.22, k * 0.12, 0.25)); }
+  const COARSE = matchMedia('(pointer: coarse)').matches;
+  if (COARSE) document.getElementById('pauseBtn').textContent = '⏸';
   function setMute(m) {
     A.muted = m;
     if (A.master) A.master.gain.setTargetAtTime(m ? 0 : 0.55, A.ctx.currentTime, 0.05);
-    document.getElementById('mute').textContent = m ? '🔇 Ses kapalı (M)' : '🔊 Ses açık (M)';
+    document.getElementById('mute').textContent = (m ? '🔇' : '🔊') + (COARSE ? '' : m ? ' Ses kapalı (M)' : ' Ses açık (M)');
     try { localStorage.setItem('pistMute', m ? '1' : '0'); } catch (e) {}
   }
   function audioUpdate(off, gas, racing) {
@@ -3042,6 +3067,48 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   document.getElementById('overRestart').addEventListener('click', restartCruise);
   document.getElementById('overGarage').addEventListener('click', () => { $('over').hidden = true; enterGarage(); });
   document.getElementById('mSound').addEventListener('click', () => { initAudio(); setMute(!A.muted); refreshMenu(); if (paused && A.ctx) A.ctx.suspend(); });
+  // ---------- Touch steering: drag a wheel, tilt the phone, or the old arrow buttons ----------
+  const SNAME = { drag: 'Kaydır', tilt: 'Telefonu eğ', buttons: 'Oklar' }, SMODES = ['drag', 'tilt', 'buttons'];
+  let steerMode = 'drag', steerIn = null;   // steerIn: analog -1..1 (left positive) while a touch or tilt is steering
+  try { const m = localStorage.getItem('pistSteer'); if (SNAME[m]) steerMode = m; } catch (e) {}
+  const wheelEl = document.getElementById('wheel'), zone = document.getElementById('steerZone');
+  function applySteerMode() {
+    document.body.classList.toggle('steer-drag', steerMode === 'drag');
+    document.body.classList.toggle('steer-tilt', steerMode === 'tilt');
+    steerIn = null; wheelEl.style.transform = '';
+    document.getElementById('mSteerName').textContent = 'Direksiyon: ' + SNAME[steerMode];
+  }
+  {
+    let id = null, x0 = 0;
+    zone.addEventListener('pointerdown', e => { e.preventDefault(); initAudio(); id = e.pointerId; x0 = e.clientX; zone.setPointerCapture(id); zone.classList.add('active'); steerIn = 0; document.getElementById('steerHint').hidden = true; });
+    zone.addEventListener('pointermove', e => {
+      if (e.pointerId !== id) return;
+      const d = (e.clientX - x0) / 70;   // 70 px of drag = full lock
+      if (Math.abs(d) > 1) x0 = e.clientX - Math.sign(d) * 70;   // the centre follows a long drag so turning back is quick
+      steerIn = -Math.max(-1, Math.min(1, d));
+      wheelEl.style.transform = `rotate(${-steerIn * 90}deg)`;
+    });
+    const end = e => { if (e.pointerId !== id) return; id = null; steerIn = null; zone.classList.remove('active'); wheelEl.style.transform = ''; };
+    zone.addEventListener('pointerup', end); zone.addEventListener('pointercancel', end);
+  }
+  function onTilt(e) {
+    if (steerMode !== 'tilt' || e.beta == null) return;
+    const ang = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
+    // landscape: turning the phone like a wheel changes beta; portrait: gamma
+    let v = ang === 90 ? e.beta : (ang === -90 || ang === 270) ? -e.beta : e.gamma;
+    v = v / 22; if (Math.abs(v) < 0.08) v = 0;
+    steerIn = -Math.max(-1, Math.min(1, v));
+  }
+  addEventListener('deviceorientation', onTilt);
+  function cycleSteer() {
+    steerMode = SMODES[(SMODES.indexOf(steerMode) + 1) % SMODES.length];
+    try { localStorage.setItem('pistSteer', steerMode); } catch (e) {}
+    applySteerMode();
+    if (steerMode === 'tilt' && window.DeviceOrientationEvent && DeviceOrientationEvent.requestPermission) DeviceOrientationEvent.requestPermission().catch(() => {});   // iPhone asks once
+    toast('Direksiyon: ' + SNAME[steerMode]);
+  }
+  document.getElementById('mSteer').addEventListener('click', cycleSteer);
+  applySteerMode();
   for (const [id, k] of [['tLeft', 'left'], ['tRight', 'right'], ['tGas', 'gas'], ['tBrake', 'brake'], ['tNitro', 'nitro']]) {
     const b = document.getElementById(id);
     const on = e => { e.preventDefault(); initAudio(); keys[k] = true; b.classList.add('on'); };
@@ -3118,7 +3185,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     S.speed = Math.max(-MAX_REV, Math.min(boosting ? MAX_FWD * 1.22 : Math.max(MAX_FWD, S.speed - 9 * dt), S.speed));
 
     // steering
-    const target = (keys.left ? 1 : 0) - (keys.right ? 1 : 0);
+    const target = steerIn != null ? steerIn : (keys.left ? 1 : 0) - (keys.right ? 1 : 0);
     S.steer += (target - S.steer) * Math.min(1, dt * 8);
     const sp = Math.abs(S.speed);
     const grip = (keys.hand ? 1.5 : 1) * (wet && sp > 15 ? 0.78 : 1);
