@@ -31,6 +31,11 @@
   #speedo { bottom: calc(16px + env(safe-area-inset-bottom, 0px)); right: max(16px, env(safe-area-inset-right, 0px)); text-align: right; }
   #speed { font-family: var(--font-display); font-weight: 700; font-size: 44px; line-height: 1; }
   #speedo .unit { color: var(--hud-dim); font-size: 12px; letter-spacing: 0.1em; }
+  #money { font-family: var(--font-display); font-weight: 700; font-size: 14px; color: #7ee08a; }
+  #nitroBar { margin-top: 6px; width: 120px; height: 9px; border-radius: 5px; background: rgba(255,255,255,0.16); overflow: hidden; margin-left: auto; }
+  #nitroFill { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, #3d8bff, #8fd3ff); }
+  #nitroBar.on #nitroFill { background: linear-gradient(90deg, #8fd3ff, #fff); }
+  #drift { position: fixed; top: calc(70px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); font-family: var(--font-display); font-weight: 700; font-size: 30px; color: #ffcc33; text-shadow: 0 3px 14px rgba(0,0,0,0.6); pointer-events: none; z-index: 3; }
   #offroad { color: var(--accent); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; min-height: 1.2em; }
   #center { inset: 0; display: grid; place-items: center; }
   #count { font-family: var(--font-display); font-weight: 700; font-size: clamp(64px, 18vw, 160px); color: var(--accent); text-shadow: 0 4px 24px rgba(0,0,0,0.6); }
@@ -109,14 +114,17 @@
   <b>W / ↑</b> gaz · <b>S / ↓</b> fren, geri<br>
   <b>A D / ← →</b> direksiyon · <b>Boşluk</b> el freni<br>
   <b>R</b> yeniden başla · <b>C</b> kamera · <b>B</b> renk<br>
-  <b>H</b> korna · <b>N</b> gece · <b>Y</b> hava · <b>Esc / P</b> duraklat
+  <b>Shift</b> nitro · <b>H</b> korna · <b>N</b> saat · <b>Y</b> hava · <b>Esc / P</b> duraklat
 </div>
 
 <div id="speedo" class="hud panel">
   <div id="offroad"></div>
+  <div id="money">3.000 ₺</div>
   <div id="speed">0</div>
   <div class="unit">KM/SA</div>
+  <div id="nitroBar" title="Nitro (Shift)"><span id="nitroFill"></span></div>
 </div>
+<div id="drift"></div>
 
 <button id="mute" class="panel" type="button">🔊 Ses açık (M)</button>
 <button id="pauseBtn" class="panel" type="button" aria-label="Duraklat">⏸ Duraklat</button>
@@ -138,11 +146,12 @@
 
 <div id="garage" hidden>
   <div class="gpanel" role="dialog" aria-label="Garaj">
-    <div class="ghead"><h2>GARAJ</h2><span class="gsub">Arabanı ve rengini seç</span></div>
+    <div class="ghead"><h2>GARAJ</h2><span class="gsub">Arabanı ve rengini seç</span><span id="gMoney" class="gsub" style="margin-left:auto;color:#7ee08a;font-weight:700"></span></div>
     <div id="gCars" class="gcars"></div>
     <div class="gcolors"><div id="gSwatches" class="gswatches"></div>
       <label class="gcustom">Özel renk <input id="gColor" type="color" value="#b0000a"></label></div>
     <div id="gMode" class="gmode" role="group" aria-label="Oyun modu"><button type="button" data-mode="race">Yarış<small>Tur ve süre</small></button><button type="button" data-mode="cruise">Şehir gezintisi<small>Okul, dükkanlar, serbest sürüş</small></button></div>
+    <div id="gChamp" class="gmode" role="group" aria-label="Yarış türü"><button type="button" data-champ="0">Tek yarış<small>Seçtiğin pistte 3 tur</small></button><button type="button" data-champ="1">🏆 Şampiyona<small>4 pist art arda, puan tablosu, kupa</small></button></div>
     <div id="gTrack" class="gmode" role="group" aria-label="Pist"></div>
     <button id="gStart" class="gstart" type="button">Yarışa başla <kbd>Enter</kbd></button>
     <p id="gCredit" class="credits"></p>
@@ -169,7 +178,7 @@
 
 <div id="touch">
   <div class="grp"><button id="tLeft" aria-label="Sola dön">◀</button><button id="tRight" aria-label="Sağa dön">▶</button></div>
-  <div class="grp"><button id="tHorn" aria-label="Korna" style="font-size:26px">📯</button><button id="tBrake" aria-label="Fren">▼</button><button id="tGas" aria-label="Gaz">▲</button></div>
+  <div class="grp"><button id="tHorn" aria-label="Korna" style="font-size:26px">📯</button><button id="tNitro" aria-label="Nitro" style="font-size:24px">🔥</button><button id="tBrake" aria-label="Fren">▼</button><button id="tGas" aria-label="Gaz">▲</button></div>
 </div>
 
 <script type="importmap">
@@ -971,6 +980,21 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       paintMats: [], chromeMats: ['chrome'], glassMats: ['windowglass', 'clearglass'], wheelMats: ['tire'],
       credit: 'Model: <a href="https://sketchfab.com/3d-models/723f3868359b4caa90ec639d27ccf06d" target="_blank" rel="noopener">vecarz</a>, CC BY 4.0' }
   ];
+  // ---------- Money: earned in races, drifts and clean driving; buys new cars ----------
+  const PRICES = { troc: 0, nitro: 0, corsa: 0, van: 0, crafter: 3000, mustang65: 4000, mustang69: 7000, ferrari: 12000, bmwm4: 15000 };
+  let money = 3000, owned = new Set(['nitro', 'corsa', 'troc', 'van']);
+  try {
+    const m = parseInt(localStorage.getItem('pistPara'), 10); if (m >= 0) money = m;
+    const o = JSON.parse(localStorage.getItem('pistGaraj') || 'null'); if (Array.isArray(o)) owned = new Set(o);
+  } catch (e) {}
+  const tl = n => n.toLocaleString('tr-TR') + ' ₺';
+  const isOwned = id => owned.has(id) || !PRICES[id];
+  function saveMoney() {
+    try { localStorage.setItem('pistPara', String(money)); localStorage.setItem('pistGaraj', JSON.stringify([...owned])); } catch (e) {}
+    const a = document.getElementById('money'), b = document.getElementById('gMoney');
+    if (a) a.textContent = tl(money); if (b) b.textContent = 'Paran: ' + tl(money);
+  }
+  function addMoney(n) { if (n > 0) { money += Math.round(n); saveMoney(); } }
   PAINTS.push({ name: 'Turuncu', c: 0xc4561d }, { name: 'Turkuaz', c: 0x1f9a9e });
   const rubberMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 });
   const paint = new THREE.MeshPhysicalMaterial({ color: PAINTS[0].c, metalness: 0.6, roughness: 0.35, clearcoat: 1, clearcoatRoughness: 0.03 });
@@ -1093,8 +1117,20 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     if (carCache[cfg.id]) { mountCar(cfg.id); return Promise.resolve(); }
     return carLoading = ensureModel(i).then(() => { if (carIdx === i) mountCar(cfg.id); });
   }
+  // nitro flames behind the car
+  const flames = new THREE.Group(); flames.visible = false; car.add(flames);
+  {
+    const fg = new THREE.ConeGeometry(0.13, 1.1, 10).rotateX(-Math.PI / 2).translate(0, 0, -0.55);
+    const outer = new THREE.MeshBasicMaterial({ color: 0x3d8bff, transparent: true, opacity: 0.75, blending: THREE.AdditiveBlending, depthWrite: false });
+    const inner = new THREE.MeshBasicMaterial({ color: 0xdff2ff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
+    for (const x of [-0.42, 0.42]) {
+      const o = new THREE.Mesh(fg, outer); o.position.x = x; flames.add(o);
+      const n = new THREE.Mesh(fg, inner); n.position.x = x; n.scale.set(0.5, 0.5, 0.6); n.userData.z = 0.6; flames.add(n);
+    }
+  }
   function mountCar(id) {
     const cfg = CARS.find(c => c.id === id);
+    flames.position.set(0, 0.38, -(cfg.length || 4.55) / 2 + 0.05);
     MAX_FWD = cfg.vmax; ACCEL = cfg.accel;
     while (body.children.length) body.remove(body.children[0]);
     const e = carCache[id];
@@ -2335,6 +2371,35 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   const playerBeam = new THREE.Mesh(beamGeo, beamMat); playerBeam.visible = false; playerBeam.renderOrder = 3; car.add(playerBeam);
   let night = false;
   try { night = localStorage.getItem('pistNight') === '1'; } catch (e) {}
+  // time of day: fixed day, fixed night, or a clock that runs (sunset, night, sunrise)
+  const TNAME = { day: 'Gündüz', cycle: 'Akan zaman', night: 'Gece' }, TMODES = ['day', 'cycle', 'night'];
+  let timeMode = night ? 'night' : 'day';
+  try { const t = localStorage.getItem('pistTime'); if (TNAME[t]) timeMode = t; } catch (e) {}
+  let dayT = 0.3;   // 0 = 06:00 sunrise, 0.5 = 18:00 sunset
+  if (timeMode === 'cycle') night = false; else night = timeMode === 'night';
+  const SUN0 = sunDir.clone(), EXPO0 = renderer.toneMappingExposure;
+  const _c1 = new THREE.Color(), WARM = new THREE.Color(0xff8a3c), DUSK = new THREE.Color(0xe39a72);
+  const clockStr = () => { const h = (dayT * 24 + 6) % 24; return String(Math.floor(h)).padStart(2, '0') + ':' + String(Math.floor((h % 1) * 60)).padStart(2, '0'); };
+  function dayStep(dt) {
+    if (timeMode !== 'cycle') return;
+    const up = Math.sin(2 * Math.PI * dayT) > 0;
+    dayT = (dayT + dt / (up ? 420 : 150)) % 1;   // 7 minutes of daylight, 2.5 of night
+    const el = 70 * Math.sin(2 * Math.PI * dayT), az = 100 + (dayT % 0.5) * 2 * 160;
+    if ((el < -3) !== night) { night = el < -3; applyNight(); }
+    if (Math.random() < 0.02) { const e2 = document.getElementById('mNightName'); if (e2) e2.textContent = 'Saat: ' + clockStr() + ' (akan)'; }
+    if (night) return;
+    const D = THREE.MathUtils.degToRad;
+    sunDir.setFromSphericalCoords(1, D(90 - Math.max(el, 4)), D(az));
+    sky.material.uniforms.sunPosition.value.setFromSphericalCoords(1, D(90 - el), D(az));
+    if (weather !== 'clear') return;
+    const sm = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+    const k = sm(-3, 25, el), warm = 1 - sm(3, 28, el);
+    sun.intensity = 0.5 + 2.3 * k;
+    sun.color.setHex(0xfff0d8).lerp(WARM, warm);
+    hemi.intensity = 0.2 + 0.2 * k;
+    scene.fog.color.setHex(HAZE).lerp(DUSK, warm * 0.8).multiplyScalar(0.45 + 0.55 * k);
+    renderer.toneMappingExposure = EXPO0 * (0.55 + 0.45 * k);
+  }
   let savedEnv = null;
   function applyNight() {
     const n = night;
@@ -2352,7 +2417,8 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     headSpot.visible = playerBeam.visible = n;
     for (const t of traffic) if (t.beam) t.beam.visible = n;
     pools.race.visible = n && S.mode === 'race'; pools.cruise.visible = n && S.mode === 'cruise';
-    const el = document.getElementById('mNightName'); if (el) el.textContent = n ? 'Saat: Gece' : 'Saat: Gündüz';
+    const el = document.getElementById('mNightName'); if (el) el.textContent = 'Saat: ' + (timeMode === 'cycle' ? clockStr() + ' (akan)' : TNAME[timeMode]);
+    if (timeMode !== 'cycle') renderer.toneMappingExposure = EXPO0;
     applyWeather();
   }
 
@@ -2406,7 +2472,14 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     }
     rainGeo.attributes.position.needsUpdate = true;
   }
-  function toggleNight() { night = !night; try { localStorage.setItem('pistNight', night ? '1' : '0'); } catch (e) {} applyNight(); }
+  function toggleNight() {
+    timeMode = TMODES[(TMODES.indexOf(timeMode) + 1) % 3];
+    try { localStorage.setItem('pistTime', timeMode); localStorage.setItem('pistNight', timeMode === 'night' ? '1' : '0'); } catch (e) {}
+    dayT = 0.3; night = timeMode === 'night';
+    sunDir.copy(SUN0); sky.material.uniforms.sunPosition.value.copy(SUN0); renderer.toneMappingExposure = EXPO0;
+    applyNight();
+    if (!paused) toast('Saat: ' + TNAME[timeMode] + (timeMode === 'cycle' ? ' · güneş batacak' : ''));
+  }
 
 
   // ---------- Traffic police checkpoints: not always there; when they are, you must stop ----------
@@ -2622,7 +2695,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   }
   function reward(n, why) {
     if (S.phase !== 'free') return;
-    R.pts = Math.min(100, R.pts + n); toast(`+${n}  ${why}`); beep(880, 0.12, 0, 0.18); updateRulesHud();
+    R.pts = Math.min(100, R.pts + n); addMoney(n * 10); toast(`+${n}  ${why} · +${tl(n * 10)}`); beep(880, 0.12, 0, 0.18); updateRulesHud();
   }
   function gameOver() {
     S.phase = 'over'; S.speed = 0;
@@ -2636,28 +2709,59 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   }
   const RACE_LAPS = 3;
   let bestRace = null;
+  let champOn = false, champ = null;   // championship: the 4 circuits in a row, points per finish
+  const CH_PTS = [10, 7, 5, 3], PRIZE = [1500, 900, 600, 300];
   function finishRace() {
     const now = clock - S.raceT0;
     // everyone's time: finished rivals exactly, the rest estimated from where they are now
-    const rows = [{ name: 'Sen', t: now, me: true }].concat(rivals.map(r => {
-      const name = (CARS.find(c => c.id === r.id) || {}).name || 'Rakip';
-      if (r.finish != null) return { name, t: r.finish };
+    const rname = r => (CARS.find(c => c.id === r.id) || {}).name || 'Rakip';
+    const rows = [{ name: 'Sen', t: now, me: true, k: 0 }].concat(rivals.map((r, k) => {
+      const name = rname(r);
+      if (r.finish != null) return { name, t: r.finish, k: k + 1 };
       const left = (6 + RACE_LAPS * N - r.prog) * SEG;
-      return { name, t: now + left / Math.max(r.v, 25), est: true };
+      return { name, t: now + left / Math.max(r.v, 25), est: true, k: k + 1 };
     })).sort((a, b) => a.t - b.t);
     const rank = rows.findIndex(r => r.me) + 1;
     const newRec = bestRace == null || now < bestRace;
     if (newRec) { bestRace = now; try { localStorage.setItem(recKey('pistBestRace'), String(now)); } catch (e) {} }
     S.phase = 'over';
-    $('overTitle').textContent = rank === 1 ? '🏆 KAZANDIN!' : `YARIŞ BİTTİ: ${rank}. OLDUN`;
+    let earn = PRIZE[rank - 1] + (newRec ? 250 : 0);
+    let champHtml = '';
+    $('overRestart').firstChild.textContent = 'Yeniden başla ';
+    if (champ) {
+      rows.forEach((r, k) => { champ.pts[r.k] += CH_PTS[k]; });
+      const names = ['Sen'].concat(rivals.map(rname));
+      const table = names.map((n, k) => ({ n, p: champ.pts[k], me: k === 0 })).sort((a, b) => b.p - a.p);
+      const last = champ.round === TRACKS.length - 1;
+      const cRank = table.findIndex(r => r.me) + 1;
+      if (last) earn += [5000, 2000, 1000, 0][cRank - 1];
+      champHtml = `<div style="margin-top:10px"><b>Şampiyona puanları (${champ.round + 1} / ${TRACKS.length})</b></div><table style="width:100%;border-collapse:collapse;margin:4px 0 8px">` + table.map((r, k) =>
+        `<tr style="${r.me ? 'color:#ffcc33;font-weight:700' : ''}"><td style="padding:2px 6px 2px 0">${k + 1}.</td><td>${r.n}</td><td style="text-align:right">${r.p} puan</td></tr>`).join('') + '</table>';
+      if (last) {
+        $('overTitle').textContent = cRank === 1 ? '🏆 ŞAMPİYON OLDUN!' : `ŞAMPİYONA BİTTİ: ${cRank}. OLDUN`;
+        champ = null; S.champNext = false;
+      } else {
+        $('overTitle').textContent = `YARIŞ ${champ.round + 1}: ${rank}. OLDUN`;
+        S.champNext = true;
+        $('overRestart').firstChild.textContent = 'Sonraki yarış: ' + TRACKS[champ.round + 1].name + ' ';
+      }
+    } else $('overTitle').textContent = rank === 1 ? '🏆 KAZANDIN!' : `YARIŞ BİTTİ: ${rank}. OLDUN`;
+    addMoney(earn);
     $('overText').innerHTML = '<table style="width:100%;border-collapse:collapse;margin-bottom:8px">' + rows.map((r, k) =>
       `<tr style="${r.me ? 'color:#ffcc33;font-weight:700' : ''}"><td style="padding:2px 6px 2px 0">${k + 1}.</td><td>${r.name}</td><td style="text-align:right;font-variant-numeric:tabular-nums">${r.est ? '≈ ' : ''}${fmt(r.t)}</td></tr>`).join('') + '</table>' +
       '<small>Tur sürelerin: ' + S.laps.map(fmt).join(' · ') + '</small><br>' +
-      `<b>${newRec ? '⭐ Yeni rekor yarış: ' + fmt(now) : 'Rekor yarış: ' + fmt(bestRace)}</b> · En iyi tur: ${fmt(S.best)}`;
+      `<b>${newRec ? '⭐ Yeni rekor yarış: ' + fmt(now) : 'Rekor yarış: ' + fmt(bestRace)}</b> · En iyi tur: ${fmt(S.best)}` +
+      champHtml + `<div style="margin-top:6px;color:#7ee08a;font-weight:700">+${tl(earn)} kazandın · Paran: ${tl(money)}</div>`;
     $('over').hidden = false;
     if (rank === 1) [523, 659, 784, 1046].forEach((f, k) => beep(f, 0.25, k * 0.14, 0.25)); else lapChime(false);
   }
-  function restartCruise() { $('over').hidden = true; reset(); }
+  function restartCruise() {
+    $('over').hidden = true;
+    if (S.champNext && champ) { S.champNext = false; champ.round++; selectTrack(TRACKS[champ.round].id); }
+    $('overRestart').firstChild.textContent = 'Yeniden başla ';
+    reset();
+    if (champ && S.mode === 'race') toast(`Şampiyona ${champ.round + 1} / ${TRACKS.length}: ${track.name}`);
+  }
 
   // ---------- Race rivals: three AI cars that brake for corners and steer round you ----------
   const rivalsG = new THREE.Group(); scene.add(rivalsG);
@@ -2749,7 +2853,8 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   const S = {
     pos: new THREE.Vector3(), heading: 0, speed: 0, steer: 0, idx: 0,
     lap: 1, lapStart: 0, last: null, best: null, half: false,
-    phase: 'garage', countT: 0, camMode: 0, orbit: 0.6, mode: 'race'
+    phase: 'garage', countT: 0, camMode: 0, orbit: 0.6, mode: 'race',
+    nitro: 0.4, boosting: false, drift: 0, driftIdle: 0, driftYaw: 0, fovK: 0
   };
   const recKey = k => track.id === 'city' ? k : k + '_' + track.id;   // records are kept per circuit
   function loadRecords() {
@@ -2762,6 +2867,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   loadRecords();
 
   function reset() {
+    S.nitro = 0.4; S.drift = 0; S.driftYaw = 0; S.fovK = 0; S.boosting = false;
     if (S.mode === 'cruise') {
       { const k = 6, q = hwPts[k], t = hwTan[k]; S.pos.set(q.x, q.y, q.z).addScaledVector(hwNor[k], -3.6); S.heading = Math.atan2(t.x, t.z); hwIdx = -1; }
       S.speed = 0; S.steer = 0; S.phase = 'free'; S.countT = -1; S.lastShown = null;
@@ -2863,7 +2969,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
 
   // ---------- Input ----------
   const keys = {};
-  const map = { ArrowUp: 'gas', KeyW: 'gas', ArrowDown: 'brake', KeyS: 'brake', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', Space: 'hand' };
+  const map = { ArrowUp: 'gas', KeyW: 'gas', ArrowDown: 'brake', KeyS: 'brake', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', Space: 'hand', ShiftLeft: 'nitro', ShiftRight: 'nitro', KeyX: 'nitro' };
   const CAMS = ['Takip', 'Kokpit', 'Yan'];
   let paused = false;
   function setPaused(p) {
@@ -2936,7 +3042,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   document.getElementById('overRestart').addEventListener('click', restartCruise);
   document.getElementById('overGarage').addEventListener('click', () => { $('over').hidden = true; enterGarage(); });
   document.getElementById('mSound').addEventListener('click', () => { initAudio(); setMute(!A.muted); refreshMenu(); if (paused && A.ctx) A.ctx.suspend(); });
-  for (const [id, k] of [['tLeft', 'left'], ['tRight', 'right'], ['tGas', 'gas'], ['tBrake', 'brake']]) {
+  for (const [id, k] of [['tLeft', 'left'], ['tRight', 'right'], ['tGas', 'gas'], ['tBrake', 'brake'], ['tNitro', 'nitro']]) {
     const b = document.getElementById(id);
     const on = e => { e.preventDefault(); initAudio(); keys[k] = true; b.classList.add('on'); };
     const off = e => { e.preventDefault(); keys[k] = false; b.classList.remove('on'); };
@@ -2973,6 +3079,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   }
 
   function step(dt) {
+    dayStep(dt);
     if (S.phase === 'garage') { garageStep(dt); return; }
     clock += dt;
     if (S.phase === 'count') {
@@ -2990,18 +3097,25 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     const off = !cruise && Math.abs(near.lat) > HALF + KERB * 0.6;
     const gas = racing && keys.gas, brake = racing && keys.brake;
 
+    // nitro: a short push past the car's top speed, refilled slowly and by drifting
+    const boosting = racing && keys.nitro && S.nitro > 0.01 && S.speed > 2;
+    if (boosting) {
+      if (!S.boosting) beep(160, 0.4, 0, 0.18);
+      S.nitro = Math.max(0, S.nitro - dt / 3.5); S.speed += ACCEL * 1.1 * dt;
+    } else if (racing) S.nitro = Math.min(1, S.nitro + dt * 0.012);
+    S.boosting = boosting;
     // longitudinal
     if (gas) S.speed += ACCEL * Math.max(0, 1 - (Math.max(0, S.speed) / MAX_FWD) ** 2) * dt;
     const wet = weather === 'rain';
     if (brake) S.speed -= (S.speed > 0.5 ? BRAKE * (wet ? 0.6 : 1) : ACCEL * 0.6) * dt;
     if (!gas && !brake) S.speed -= Math.sign(S.speed) * Math.min(Math.abs(S.speed), ROLL * dt);
     if (!gas) S.speed -= DRAG * S.speed * Math.abs(S.speed) * dt;
-    if (keys.hand) S.speed -= Math.sign(S.speed) * Math.min(Math.abs(S.speed), 18 * dt);
+    if (keys.hand) S.speed -= Math.sign(S.speed) * Math.min(Math.abs(S.speed), (Math.abs(S.steer) > 0.35 ? 7 : 18) * dt);   // a handbrake turn keeps more speed
     if (off) {   // grass and kerbs slow you a bit, they don't stop you dead
       S.speed -= S.speed * 0.45 * dt;
       if (S.speed > 38) S.speed = Math.max(38, S.speed - 10 * dt);
     }
-    S.speed = Math.max(-MAX_REV, Math.min(MAX_FWD, S.speed));
+    S.speed = Math.max(-MAX_REV, Math.min(boosting ? MAX_FWD * 1.22 : Math.max(MAX_FWD, S.speed - 9 * dt), S.speed));
 
     // steering
     const target = (keys.left ? 1 : 0) - (keys.right ? 1 : 0);
@@ -3013,6 +3127,15 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
 
     S.pos.x += Math.sin(S.heading) * S.speed * dt;
     S.pos.z += Math.cos(S.heading) * S.speed * dt;
+
+    // drift: sliding through a corner builds points, banked as money and nitro once you straighten up
+    const drifting = racing && !off && sp > 14 && Math.abs(S.steer) > 0.35 && (keys.hand || (sp > 28 && Math.abs(S.steer) > 0.7));
+    if (drifting) { S.drift += sp * Math.abs(S.steer) * dt * (keys.hand ? 1.4 : 1); S.driftIdle = 0; S.nitro = Math.min(1, S.nitro + dt * 0.1); }
+    else if (S.drift > 0 && (S.driftIdle += dt) > 0.7) {
+      const p = Math.round(S.drift); S.drift = 0;
+      if (p >= 15) { addMoney(p / 4); toast(`Drift ${p} puan · +${tl(Math.round(p / 4))}`); beep(660, 0.12, 0, 0.18); }
+    }
+    S.driftYaw += ((drifting ? S.steer * 0.32 : 0) - S.driftYaw) * Math.min(1, dt * 5);
 
     if (cruise) { lightsStep(); fountainStep(dt); policeStep(dt); trafficStep(dt); emergencyStep(dt); pedStep(dt); cruiseCollide(); hwFollow(dt); redLightCheck(); rulesStep(dt); }
     else {
@@ -3058,6 +3181,8 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     $('best').textContent = fmt(S.best);
     $('bestRace').textContent = fmt(bestRace);
     $('speed').textContent = Math.round(Math.abs(S.speed) * 3.6);
+    $('nitroFill').style.width = (S.nitro * 100).toFixed(0) + '%'; $('nitroBar').classList.toggle('on', boosting);
+    $('drift').textContent = S.drift > 3 ? 'DRIFT ' + Math.round(S.drift) : '';
     drawMinimap();
     $('offroad').textContent = off ? 'Pist dışı' : '';
     audioUpdate(off, gas, racing);
@@ -3066,8 +3191,11 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     // car visuals
     car.position.copy(S.pos);
     car.rotation.order = 'YXZ';
-    car.rotation.y = S.heading;
+    car.rotation.y = S.heading + S.driftYaw;
     car.rotation.x += ((S.pitch || 0) - car.rotation.x) * Math.min(1, dt * 10);
+    flames.visible = boosting;
+    if (boosting) for (const f of flames.children) f.scale.z = (f.userData.z || 1) * (0.7 + Math.random() * 0.6);
+    S.fovK += ((boosting ? 12 : 0) - S.fovK) * Math.min(1, dt * 4);
     body.rotation.z = -S.steer * Math.min(1, sp / 30) * 0.05;
     for (const w of wheels) {
       w.spin.rotation.x += (w.sign || 1) * S.speed * dt / 0.34;
@@ -3082,11 +3210,11 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       camPos.lerp(want, 1 - Math.exp(-dt * 6));
       camera.position.copy(camPos);
       camera.lookAt(S.pos.clone().addScaledVector(dir, 5).setY(S.pos.y + 1.4));
-      camera.fov = 62 + sp * 0.18;
+      camera.fov = 62 + sp * 0.18 + S.fovK;
     } else if (S.camMode === 1) {
       camera.position.copy(S.pos).addScaledVector(dir, 0.3).setY(S.pos.y + 1.6);
       camera.lookAt(S.pos.clone().addScaledVector(dir, 20).setY(S.pos.y + 1.3 - (S.pitch || 0) * 20));
-      camera.fov = 70 + sp * 0.12;
+      camera.fov = 70 + sp * 0.12 + S.fovK;
       camPos.copy(camera.position);
     } else {
       // rear three-quarter view, like a showroom photo
@@ -3120,13 +3248,25 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
 
   // ---------- Garage ----------
   function enterGarage() {
+    champ = null; S.champNext = false;
     reset(); S.phase = 'garage'; S.orbit = 0.6;
     $('count').textContent = '';
     $('garage').hidden = false;
     refreshGarage();
   }
+  function garageAction() {
+    const c = CARS[carIdx];
+    if (!isOwned(c.id)) {
+      if (money < PRICES[c.id] || !carCache[c.id]) return;
+      money -= PRICES[c.id]; owned.add(c.id); saveMoney();
+      toast(c.name + ' artık senin!'); [523, 784, 1046].forEach((f, k) => beep(f, 0.2, k * 0.12, 0.25));
+      refreshGarage(); return;
+    }
+    startRace();
+  }
   function startRace() {
-    if (!carCache[CARS[carIdx].id]) return;
+    if (!carCache[CARS[carIdx].id] || !isOwned(CARS[carIdx].id)) return;
+    if (S.mode === 'race' && champOn) { champ = { round: 0, pts: [0, 0, 0, 0] }; selectTrack(TRACKS[0].id); }
     $('garage').hidden = true;
     initAudio();
     reset();
@@ -3142,7 +3282,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     if (!cars || !sw) return;
     if (!cars.children.length) {
       CARS.forEach((c, i) => {
-        const b = document.createElement('button'); b.type = 'button'; b.innerHTML = `${c.name}<small>En yüksek hız ${Math.round(c.vmax * 3.6)} km/sa</small>`;
+        const b = document.createElement('button'); b.type = 'button';
         b.addEventListener('click', () => { loadCar(i).then(refreshGarage, () => toast('Araba yüklenemedi')); setPaintHex(c.paint); refreshGarage(); });
         cars.appendChild(b);
       });
@@ -3154,7 +3294,8 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
         sw.appendChild(b);
       });
       document.getElementById('gColor').addEventListener('input', e => setPaintHex(parseInt(e.target.value.slice(1), 16)));
-      document.getElementById('gStart').addEventListener('click', startRace);
+      document.getElementById('gStart').addEventListener('click', garageAction);
+      document.querySelectorAll('#gChamp button').forEach(b => b.addEventListener('click', () => { champOn = b.dataset.champ === '1'; refreshGarage(); }));
       document.querySelectorAll('#gMode button').forEach(b => b.addEventListener('click', () => { setMode(b.dataset.mode); enterGarage(); }));
       TRACKS.forEach(t => {
         const b = document.createElement('button'); b.type = 'button'; b.dataset.track = t.id;
@@ -3163,27 +3304,38 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
         $('gTrack').appendChild(b);
       });
     }
-    [...cars.children].forEach((b, i) => b.setAttribute('aria-pressed', String(i === carIdx)));
+    [...cars.children].forEach((b, i) => {
+      const c = CARS[i];
+      b.innerHTML = `${c.name}<small>${isOwned(c.id) ? 'En yüksek hız ' + Math.round(c.vmax * 3.6) + ' km/sa' : '🔒 ' + tl(PRICES[c.id]) + ' · ' + Math.round(c.vmax * 3.6) + ' km/sa'}</small>`;
+      b.setAttribute('aria-pressed', String(i === carIdx));
+    });
+    saveMoney();
     const hex = paint.color.getHex();
     [...sw.children].forEach((b, i) => b.setAttribute('aria-pressed', String(PAINTS[i].c === hex)));
     document.getElementById('gColor').value = '#' + hex.toString(16).padStart(6, '0');
     const ok = !!carCache[CARS[carIdx].id];
     const st = document.getElementById('gStart');
-    st.disabled = !ok;
-    st.firstChild.textContent = ok ? (S.mode === 'cruise' ? 'Gezintiye başla ' : 'Yarışa başla ') : 'Araba yükleniyor… ';
+    const cid = CARS[carIdx].id, mine = isOwned(cid), price = PRICES[cid] || 0;
+    st.disabled = !ok || (!mine && money < price);
+    st.firstChild.textContent = !ok ? 'Araba yükleniyor… ' : !mine ? (money >= price ? `Satın al: ${tl(price)} ` : `Paran yetmiyor: ${tl(price)} `)
+      : S.mode === 'cruise' ? 'Gezintiye başla ' : champOn ? 'Şampiyonaya başla ' : 'Yarışa başla ';
+    $('gChamp').hidden = S.mode !== 'race';
+    document.querySelectorAll('#gChamp button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.champ === '1') === champOn)));
     document.querySelectorAll('#gMode button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === S.mode)));
-    $('gTrack').hidden = S.mode !== 'race';
+    $('gTrack').hidden = S.mode !== 'race' || champOn;
     document.querySelectorAll('#gTrack button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.track === track.id)));
     document.getElementById('gCredit').innerHTML = CARS[carIdx].credit;
   }
 
   let startCar = 0, startPaint = null;
   try {
-    const id = localStorage.getItem('pistCar'); const i = CARS.findIndex(c => c.id === id); if (i >= 0) startCar = i;
+    startCar = CARS.findIndex(c => c.id === 'corsa');
+    const id = localStorage.getItem('pistCar'); const i = CARS.findIndex(c => c.id === id); if (i >= 0 && isOwned(id)) startCar = i;
     const pnt = parseInt(localStorage.getItem('pistPaint'), 10); if (!isNaN(pnt)) startPaint = pnt;
   } catch (e) {}
   setPaintHex(startPaint != null ? startPaint : CARS[startCar].paint);
   loadCar(startCar).then(refreshGarage, () => toast('Araba yüklenemedi'));
+  saveMoney();
   assetsReady.then(() => { ready = true; enterGarage(); });
   let lastT = performance.now();
   function frame(now) {
