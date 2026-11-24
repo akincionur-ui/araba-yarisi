@@ -1177,7 +1177,13 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       else if (cfg.chromeMats.includes(n)) o.material = chromeMat;
       else if (cfg.glassMats.includes(n)) o.material = glassMat;
       else if (cfg.blackMats && cfg.blackMats.includes(n)) o.material = rubberMat;
-      else if (o.material) { o.material.envMapIntensity = 0.8; if (o.material.metalness === undefined) o.material.metalness = 0; }
+      else if (o.material) {
+        const m = o.material;
+        m.envMapIntensity = 0.8; if (m.metalness === undefined) m.metalness = 0;
+        // Transmission makes three.js render the whole scene a second time every frame: use cheap transparency instead.
+        if (m.transmission > 0) { m.transmission = 0; m.transparent = true; m.opacity = Math.min(m.opacity, 0.45); m.depthWrite = false; }
+        if (m.clearcoat > 0) m.clearcoat = 0;
+      }
     });
     flipG.rotation.set(cfg.rotX || 0, cfg.flip ? Math.PI : 0, 0, 'YXZ');
     wrap.updateMatrixWorld(true);
