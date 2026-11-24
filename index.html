@@ -248,7 +248,8 @@
     <div id="gMode" class="gmode" role="group" aria-label="Oyun modu"><button type="button" data-mode="race">Yarış<small>Tur ve süre</small></button><button type="button" data-mode="cruise">Şehir gezintisi<small>Okul, dükkanlar, serbest sürüş</small></button></div>
     <button id="gModBtn" type="button" aria-expanded="false">🔧 Modifiye<small style="display:block;font-weight:400;font-size:12px;color:var(--hud-dim)">Motor, lastik, nitro, spoiler, neon, cam filmi</small></button>
     <div id="gMods" hidden></div>
-    <div id="gChamp" class="gmode" role="group" aria-label="Yarış türü"><button type="button" data-champ="0">Tek yarış<small>Seçtiğin pistte 3 tur</small></button><button type="button" data-champ="1">🏆 Şampiyona<small>4 pist art arda, puan tablosu, kupa</small></button></div>
+    <div id="gChamp" class="gmode" role="group" aria-label="Yarış türü"><button type="button" data-champ="0">Tek yarış<small>Seçtiğin pistte 3 tur</small></button><button type="button" data-champ="1">🏆 Şampiyona<small>4 kupa, her biri 4 pist, puan tablosu</small></button></div>
+    <div id="gCups" class="gmode" role="group" aria-label="Kupa"></div>
     <div id="gTrack" class="gmode" role="group" aria-label="Pist"></div>
     <button id="gStart" class="gstart" type="button">Yarışa başla <kbd>Enter</kbd></button>
     <p id="gCredit" class="credits"></p>
@@ -3201,6 +3202,16 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   let bestRace = null;
   let champOn = false, champ = null;   // championship: the 4 circuits in a row, points per finish
   const CH_PTS = [10, 7, 5, 3], PRIZE = [1500, 900, 600, 300];
+  // several cups of four circuits each; harder cups have quicker rivals and bigger prizes
+  const CUPS = [
+    { id: 'kutahya', name: 'Kütahya Kupası', level: 'Kolay', tracks: ['city', 'castle', 'aizanoi', 'lake'], skill: 1, bonus: [5000, 2000, 1000, 0] },
+    { id: 'dag', name: 'Dağ Kupası', level: 'Orta', tracks: ['mountain', 'frig', 'snow', 'castle'], skill: 1.04, bonus: [7000, 3000, 1500, 0] },
+    { id: 'hiz', name: 'Hız Kupası', level: 'Orta', tracks: ['airport', 'lake', 'highway', 'aizanoi'], skill: 1.04, bonus: [7000, 3000, 1500, 0] },
+    { id: 'efsane', name: 'Efsane Kupası', level: 'Zor', tracks: ['snow', 'highway', 'frig', 'mountain'], skill: 1.09, bonus: [12000, 5000, 2500, 0] }
+  ];
+  let cup = CUPS[0], cupsWon = [];
+  try { cup = CUPS.find(c => c.id === localStorage.getItem('pistCup')) || CUPS[0]; cupsWon = JSON.parse(localStorage.getItem('pistCups') || '[]'); } catch (e) {}
+  const cupTrack = k => TRACKS.find(t => t.id === champ.cup.tracks[k]);
   function finishRace() {
     const now = clock - S.raceT0;
     // everyone's time: finished rivals exactly, the rest estimated from where they are now
@@ -3222,18 +3233,19 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       rows.forEach((r, k) => { champ.pts[r.k] += CH_PTS[k]; });
       const names = ['Sen'].concat(rivals.map(rname));
       const table = names.map((n, k) => ({ n, p: champ.pts[k], me: k === 0 })).sort((a, b) => b.p - a.p);
-      const last = champ.round === TRACKS.length - 1;
+      const last = champ.round === champ.cup.tracks.length - 1;
       const cRank = table.findIndex(r => r.me) + 1;
-      if (last) earn += [5000, 2000, 1000, 0][cRank - 1];
-      champHtml = `<div style="margin-top:10px"><b>Şampiyona puanları (${champ.round + 1} / ${TRACKS.length})</b></div><table style="width:100%;border-collapse:collapse;margin:4px 0 8px">` + table.map((r, k) =>
+      if (last) earn += champ.cup.bonus[cRank - 1];
+      if (last && cRank === 1 && !cupsWon.includes(champ.cup.id)) { cupsWon.push(champ.cup.id); try { localStorage.setItem('pistCups', JSON.stringify(cupsWon)); } catch (e) {} }
+      champHtml = `<div style="margin-top:10px"><b>${champ.cup.name}: puanlar (${champ.round + 1} / ${champ.cup.tracks.length})</b></div><table style="width:100%;border-collapse:collapse;margin:4px 0 8px">` + table.map((r, k) =>
         `<tr style="${r.me ? 'color:#ffcc33;font-weight:700' : ''}"><td style="padding:2px 6px 2px 0">${k + 1}.</td><td>${r.n}</td><td style="text-align:right">${r.p} puan</td></tr>`).join('') + '</table>';
       if (last) {
-        $('overTitle').textContent = cRank === 1 ? '🏆 ŞAMPİYON OLDUN!' : `ŞAMPİYONA BİTTİ: ${cRank}. OLDUN`;
+        $('overTitle').textContent = cRank === 1 ? `🏆 ${champ.cup.name.toLocaleUpperCase('tr')} SENİN!` : `${champ.cup.name.toLocaleUpperCase('tr')} BİTTİ: ${cRank}. OLDUN`;
         champ = null; S.champNext = false;
       } else {
         $('overTitle').textContent = `YARIŞ ${champ.round + 1}: ${rank}. OLDUN`;
         S.champNext = true;
-        $('overRestart').firstChild.textContent = 'Sonraki yarış: ' + TRACKS[champ.round + 1].name + ' ';
+        $('overRestart').firstChild.textContent = 'Sonraki yarış: ' + cupTrack(champ.round + 1).name + ' ';
       }
     } else $('overTitle').textContent = rank === 1 ? '🏆 KAZANDIN!' : `YARIŞ BİTTİ: ${rank}. OLDUN`;
     addMoney(earn);
@@ -3247,10 +3259,10 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   }
   function restartCruise() {
     $('over').hidden = true;
-    if (S.champNext && champ) { S.champNext = false; champ.round++; selectTrack(TRACKS[champ.round].id); }
+    if (S.champNext && champ) { S.champNext = false; champ.round++; selectTrack(cupTrack(champ.round).id); }
     $('overRestart').firstChild.textContent = 'Yeniden başla ';
     reset();
-    if (champ && S.mode === 'race') toast(`Şampiyona ${champ.round + 1} / ${TRACKS.length}: ${track.name}`);
+    if (champ && S.mode === 'race') toast(`${champ.cup.name} ${champ.round + 1} / ${champ.cup.tracks.length}: ${track.name}`);
   }
 
   // ---------- Race rivals: three AI cars that brake for corners and steer round you ----------
@@ -3303,7 +3315,8 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       // keep it close: a rival far behind you pushes harder, one far ahead eases off
       const lead = (r.prog - S.prog) * SEG;
       const band = lead < -120 ? 1.18 : lead < -40 ? 1.08 : lead > 200 ? 0.84 : lead > 70 ? 0.92 : 1;   // they wait for you if you fall behind
-      let target = Math.min(r.skill * band * BASE_FWD, vAllow[idx] * r.skill * band);
+      const sk = r.skill * band * (champ ? champ.cup.skill : 1);
+      let target = Math.min(sk * BASE_FWD, vAllow[idx] * sk);
       // the player just ahead in our line: go round, or wait
       const gap = (S.prog - r.prog) * SEG;
       if (gap > 0 && gap < 16 && Math.abs(playerLat - r.off) < 2.8) {
@@ -3991,7 +4004,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   }
   function startRace() {
     if (!carCache[CARS[carIdx].id] || !isOwned(CARS[carIdx].id)) return;
-    if (S.mode === 'race' && champOn) { champ = { round: 0, pts: [0, 0, 0, 0] }; selectTrack(TRACKS[0].id); }
+    if (S.mode === 'race' && champOn) { champ = { cup, round: 0, pts: [0, 0, 0, 0] }; selectTrack(cupTrack(0).id); }
     $('garage').hidden = true;
     initAudio();
     reset();
@@ -4025,6 +4038,11 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       document.querySelectorAll('#gChamp button').forEach(b => b.addEventListener('click', () => { champOn = b.dataset.champ === '1'; refreshGarage(); }));
       $('gModBtn').addEventListener('click', () => { const open = $('gMods').hidden; $('gMods').hidden = !open; $('gModBtn').setAttribute('aria-expanded', String(open)); refreshGarage(); });
       document.querySelectorAll('#gMode button').forEach(b => b.addEventListener('click', () => { setMode(b.dataset.mode); enterGarage(); }));
+      CUPS.forEach(c => {
+        const b = document.createElement('button'); b.type = 'button'; b.dataset.cup = c.id;
+        b.addEventListener('click', () => { cup = c; try { localStorage.setItem('pistCup', c.id); } catch (e) {} refreshGarage(); });
+        $('gCups').appendChild(b);
+      });
       TRACKS.forEach(t => {
         const b = document.createElement('button'); b.type = 'button'; b.dataset.track = t.id;
         b.innerHTML = `${t.name}<small>${t.desc}</small>`;
@@ -4052,6 +4070,12 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     document.querySelectorAll('#gChamp button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.champ === '1') === champOn)));
     document.querySelectorAll('#gMode button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === S.mode)));
     $('gTrack').hidden = S.mode !== 'race' || champOn;
+    $('gCups').hidden = S.mode !== 'race' || !champOn;
+    [...$('gCups').children].forEach(b => {
+      const c = CUPS.find(x => x.id === b.dataset.cup);
+      b.innerHTML = `${cupsWon.includes(c.id) ? '🏆 ' : ''}${c.name}<small>${c.level} · ${c.tracks.map(id => TRACKS.find(t => t.id === id).name).join(', ')} · birincilik ${tl(c.bonus[0])}</small>`;
+      b.setAttribute('aria-pressed', String(c === cup));
+    });
     document.querySelectorAll('#gTrack button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.track === track.id)));
     document.getElementById('gCredit').innerHTML = CARS[carIdx].credit;
   }
