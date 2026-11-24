@@ -385,7 +385,17 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     { id: 'lake', name: 'Enne Gölü Turu', desc: 'Göl kıyısında hızlı ve akıcı', ground: 0xc4c99c,
       ctrl: [[0, 0], [200, -10], [340, 40], [420, 160], [420, 300], [360, 420], [240, 490], [100, 510], [-10, 470], [-80, 410], [-170, 430], [-280, 470], [-380, 380], [-400, 250], [-350, 130], [-250, 50], [-130, 10]] },
     { id: 'airport', name: 'Zafer Havalimanı', desc: 'Uzun düzlükler, sert frenler', ground: 0xb9b48a,
-      ctrl: [[-100, 0], [500, 0], [560, 30], [560, 90], [500, 120], [300, 120], [250, 150], [250, 200], [200, 230], [-100, 230], [-170, 190], [-180, 110], [-150, 40]] }
+      ctrl: [[-100, 0], [500, 0], [560, 30], [560, 90], [500, 120], [300, 120], [250, 150], [250, 200], [200, 230], [-100, 230], [-170, 190], [-180, 110], [-150, 40]] },
+    { id: 'castle', name: 'Kale Yokuşu', desc: 'Kaleye tırmanan taş duvarlı yol', ground: 0xa9b78f,
+      ctrl: (() => { const o = []; for (let k = 0; k < 20; k++) { const a = k / 20 * Math.PI * 2, r = 205 + 40 * Math.sin(3 * a + 0.6); o.push([Math.round(r * Math.sin(a)), Math.round(-r * Math.cos(a)), +(24 - 20 * Math.cos(a)).toFixed(1)]); } return o; })() },
+    { id: 'snow', name: 'Murat Dağı Karlı Yol', desc: 'Kar yağıyor, yol kaygan: erken frenle', ground: 0xe8edf2, grip: 0.72, road: 0xb9bec6, snow: true,
+      ctrl: [[0, 0, 0], [180, 0, 3], [290, 60, 9], [300, 170, 16], [220, 230, 22], [120, 210, 26], [60, 270, 30], [100, 360, 34], [220, 400, 36], [320, 470, 32], [260, 560, 26], [130, 560, 20], [20, 500, 15], [-80, 440, 11], [-180, 460, 8], [-280, 390, 5], [-270, 260, 3], [-180, 190, 2], [-230, 90, 1], [-140, 20, 0]] },
+    { id: 'highway', name: 'Gece Otoyolu', desc: 'Tünel, uzun düzlükler, nitro pisti', ground: 0x9aa486, night: true,
+      ctrl: [[0, 0], [400, 0], [700, 0], [820, 40], [870, 150], [820, 260], [700, 300], [450, 300], [350, 340], [250, 300], [0, 300], [-130, 260], [-180, 150], [-130, 40]] },
+    { id: 'aizanoi', name: 'Aizanoi Antik Kent', desc: 'Zeus Tapınağı ve sütunlar arasında', ground: 0xc9c08f,
+      ctrl: [[0, 0], [220, 0], [330, 40], [360, 140], [300, 230], [180, 250], [120, 330], [0, 380], [-140, 350], [-200, 250], [-160, 150], [-220, 60], [-130, 0]] },
+    { id: 'frig', name: 'Frig Vadisi', desc: 'Toprak yol, peribacaları, Midas Anıtı', ground: 0xc8a97a, grip: 0.88, road: 0x8f7353,
+      ctrl: [[0, 0, 0], [160, -20, 2], [280, 20, 5], [330, 120, 8], [270, 210, 10], [300, 310, 12], [220, 400, 10], [90, 420, 7], [-20, 360, 5], [-120, 400, 3], [-230, 330, 2], [-250, 200, 3], [-170, 120, 2], [-220, 30, 1], [-120, -10, 0]] }
   ];
   let track = TRACKS[0];
   try { track = TRACKS.find(t => t.id === localStorage.getItem('pistTrack')) || TRACKS[0]; } catch (e) {}
@@ -776,6 +786,105 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     return new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshStandardMaterial({ map: t, side: THREE.DoubleSide }));
   }
 
+  // ---------- Shared pieces for the newer circuits ----------
+  const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  // terrain that hugs the road and turns into natural(x, z) further away; returns the height function
+  function terrainMesh(o) {
+    const height = (x, z) => {
+      let sw = 0, sy = 0;
+      for (let i = 0; i < N; i += 4) { const dx = pts[i].x - x, dz = pts[i].z - z, d2 = dx * dx + dz * dz; const w = 1 / (d2 * d2 + 1); sw += w; sy += w * pts[i].y; }
+      const w = smooth(CURB + (o.flatTo || 3), CURB + (o.blend || 45), nearestFull(x, z).d);
+      return (sy / sw - 0.7) * (1 - w) + o.natural(x, z) * w;
+    };
+    const SZ = 1600, STEP = 8, R = SZ / STEP;
+    const geo = new THREE.PlaneGeometry(SZ, SZ, R, R).rotateX(-Math.PI / 2);
+    const pa = geo.attributes.position, uv = geo.attributes.uv, col = new Float32Array(pa.count * 3);
+    for (let k = 0; k < pa.count; k++) {
+      const x = pa.getX(k) + trackView.cx, z = pa.getZ(k) + trackView.cz, h = height(x, z);
+      pa.setXYZ(k, x, h, z); uv.setXY(k, x / 14, z / 14);
+      const c = o.color(h, x, z); col[k * 3] = c[0]; col[k * 3 + 1] = c[1]; col[k * 3 + 2] = c[2];
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    geo.computeVertexNormals();
+    let map = null;
+    if (o.map !== false) { map = grassPhoto.clone(); map.repeat.set(1, 1); map.needsUpdate = true; }
+    const t = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map, vertexColors: true, color: o.tint || 0xffffff, roughness: 1 }));
+    t.receiveShadow = true; trackG.add(t);
+    return height;
+  }
+  // a sign on two posts beside sample i
+  function roadSign(text, i, side, bg, w = 12) {
+    const sign = textPanel(text, w, 2.2, bg, '#fff');
+    const sp = pts[i].clone().addScaledVector(nors[i], side * (CURB + 3));
+    sign.position.set(sp.x, sp.y + 3.3, sp.z); sign.rotation.y = Math.atan2(tans[i].x, tans[i].z) + Math.PI; trackG.add(sign);
+    for (const s of [-w / 2 + 1, w / 2 - 1]) { const p = new THREE.Mesh(unitBox, gantryMat); p.scale.set(0.2, 4.4, 0.2); p.position.copy(sign.position).setY(sp.y); p.rotation.y = sign.rotation.y; p.translateX(s); trackG.add(p); }
+  }
+  // random spots around the circuit, at least minD from the road
+  function scatter(n, spread, minD, ok) {
+    const out = [];
+    for (let t = 0; t < n * 8 && out.length < n; t++) {
+      const x = trackView.cx + (Math.random() - 0.5) * spread, z = trackView.cz + (Math.random() - 0.5) * spread;
+      if (distToTrack(x, z) < minD) continue;
+      if (ok && !ok(x, z)) continue;
+      out.push([x, z]);
+    }
+    return out;
+  }
+  // the point inside the loop that is furthest from the road
+  function loopCentre() {
+    let best = null, bd = 0;
+    for (let x = trackView.cx - trackView.span / 2; x < trackView.cx + trackView.span / 2; x += 12)
+      for (let z = trackView.cz - trackView.span / 2; z < trackView.cz + trackView.span / 2; z += 12) {
+        if (!pointInPoly(x, z, pts)) continue;
+        const d = distToTrack(x, z); if (d > bd) { bd = d; best = new THREE.Vector3(x, 0, z); }
+      }
+    return best;
+  }
+  const stoneTex = canvasTex(256, 128, (g, w, h) => {
+    g.fillStyle = '#5d564c'; g.fillRect(0, 0, w, h);
+    for (let y = 0; y < h; y += 16) for (let x = -((y / 16) % 2) * 18; x < w; ) {
+      const bw = 22 + Math.random() * 26, v = 120 + Math.random() * 50;
+      g.fillStyle = `rgb(${v + 12},${v + 4},${v - 10})`; g.fillRect(x + 1.5, y + 1.5, bw - 3, 13);
+      x += bw;
+    }
+  });
+  const stoneMat = new THREE.MeshStandardMaterial({ map: stoneTex, roughness: 0.95, side: THREE.DoubleSide });
+  const marbleMat = new THREE.MeshStandardMaterial({ color: 0xe4dccb, roughness: 0.8 });
+  const unitCyl = keep(new THREE.CylinderGeometry(1, 1, 1, 12).translate(0, 0.5, 0));
+  const unitCylLying = keep(new THREE.CylinderGeometry(1, 1, 1, 12).rotateZ(Math.PI / 2));
+  function houses(list, H) {   // Kütahya houses: whitewashed walls, red tiled roofs
+    const walls = [], roofs = [];
+    for (const [x, z] of list) {
+      const w = 7 + Math.random() * 4, l = 8 + Math.random() * 5, r = Math.random() * 6, y = H ? Math.min(H(x - w / 2, z - l / 2), H(x + w / 2, z + l / 2), H(x - w / 2, z + l / 2), H(x + w / 2, z - l / 2)) - 0.3 : 0, h = 3.5 + Math.random() * 4 + (H ? H(x, z) - y : 0);
+      walls.push([x, y, z, w, h, l, r, ['#f1ebdd', '#e9dcc3', '#f4f1ea', '#e7d3b2', '#d9c7a6'][(Math.random() * 5) | 0]]);
+      roofs.push([x, y + h, z, w * 1.08, 2.6, l * 1.08, r, Math.random() < 0.75 ? '#b4482f' : '#8c3a2a']);
+      placedB.push({ x, z, r: Math.hypot(w, l) / 2 + 1 });
+    }
+    instanced(unitBox, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }), walls);
+    instanced(unitRoof, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 }), roofs);
+  }
+  function flagMat() {   // the Turkish flag
+    const c = document.createElement('canvas'); c.width = 300; c.height = 200;
+    const g = c.getContext('2d');
+    g.fillStyle = '#e30a17'; g.fillRect(0, 0, 300, 200);
+    g.fillStyle = '#fff'; g.beginPath(); g.arc(112, 100, 50, 0, 7); g.fill();
+    g.fillStyle = '#e30a17'; g.beginPath(); g.arc(125, 100, 40, 0, 7); g.fill();
+    g.fillStyle = '#fff'; g.beginPath();
+    for (let k = 0; k < 10; k++) { const a = Math.PI + k * Math.PI / 5, r = k % 2 ? 9.5 : 25; g.lineTo(170 + r * Math.cos(a), 100 + r * Math.sin(a)); }
+    g.fill();
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+    return new THREE.MeshStandardMaterial({ map: t, side: THREE.DoubleSide, roughness: 0.8 });
+  }
+  const snowMat = new THREE.MeshStandardMaterial({ color: 0xf4f7fb, roughness: 0.85, side: THREE.DoubleSide });
+  const SEG_LEN = i => pts[i].distanceTo(pts[(i + 1) % N]);
+  const cityNightMat = (() => {   // distant blocks with lit windows
+    const c = document.createElement('canvas'); c.width = 64; c.height = 128;
+    const g = c.getContext('2d'); g.fillStyle = '#20242c'; g.fillRect(0, 0, 64, 128);
+    for (let y = 4; y < 128; y += 8) for (let x = 4; x < 64; x += 8) if (Math.random() < 0.45) { g.fillStyle = Math.random() < 0.7 ? '#ffd58a' : '#cfe3ff'; g.fillRect(x, y, 4, 5); }
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+    return new THREE.MeshStandardMaterial({ map: t, emissiveMap: t, emissive: 0xffffff, emissiveIntensity: 0.9, roughness: 0.9 });
+  })();
+
   // ---------- Each circuit's own surroundings ----------
   let shopAt = null;
   const SCENERY = {
@@ -1013,7 +1122,213 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
         spots.push([x, 0, z, 0.9 + Math.random() * 0.7, Math.random() < 0.5 ? 'pine' : 'leaf']);
       }
       forest(spots);
+    },
+
+    castle() {
+      // a hill with Kütahya Castle on top; the road climbs round it between stone walls
+      const H = terrainMesh({
+        natural: (x, z) => 92 * Math.exp(-(x * x + z * z) / (175 * 175)) + 18 * z / 210 + 3 * Math.sin(x * 0.05) * Math.cos(z * 0.04) + 2,
+        color: h => { const r = smooth(55, 85, h); return [0.95 + r * 0.1, 0.95 - r * 0.05, 0.85 - r * 0.1]; }
+      });
+      ribbon(CURB, CURB + 0.9, 0.08, walkMat, 1, 2); ribbon(-CURB - 0.9, -CURB, 0.08, walkMat, 1, 2);
+      wall(CURB + 0.9, 0, 1.0, stoneMat, 3.5); wall(-CURB - 0.9, 0, 1.0, stoneMat, 3.5);
+      trackLim = CURB + 0.5;
+      // the castle: towers joined by crenellated walls, the flag on the keep
+      const ring = [];
+      for (let k = 0; k < 10; k++) { const a = k / 10 * Math.PI * 2, r = 30 + 9 * Math.sin(k * 2.3); ring.push([r * Math.sin(a), r * Math.cos(a)]); }
+      const towers = [], walls = [], merlons = [];
+      ring.forEach(([x, z], k) => {
+        const y = H(x, z) - 3, th = 15 + (k % 3) * 2;
+        towers.push([x, y, z, 4.6, th, 4.6, 0]);
+        for (let m = 0; m < 8; m++) { const a = m / 8 * Math.PI * 2; merlons.push([x + 4.1 * Math.sin(a), y + th, z + 4.1 * Math.cos(a), 1.3, 1.5, 1.3, a]); }
+        const [x2, z2] = ring[(k + 1) % ring.length], len = Math.hypot(x2 - x, z2 - z), rot = Math.atan2(x2 - x, z2 - z);
+        const yb = Math.min(y, H(x2, z2) - 3), mx = (x + x2) / 2, mz = (z + z2) / 2;
+        walls.push([mx, yb, mz, 2.6, 13, len, rot]);
+        for (let s = -len / 2 + 2; s < len / 2 - 1.5; s += 2.6) merlons.push([mx + Math.sin(rot) * s, yb + 13, mz + Math.cos(rot) * s, 2.6, 1.4, 1.2, rot]);
+      });
+      instanced(unitCyl, stoneMat, towers); instanced(unitBox, stoneMat, walls); instanced(unitBox, stoneMat, merlons);
+      const ky = H(0, 0);
+      const keepT = new THREE.Mesh(unitBox, stoneMat); keepT.scale.set(11, 22, 11); keepT.position.set(0, ky - 2, 0); keepT.castShadow = true; trackG.add(keepT);
+      const pole = new THREE.Mesh(unitBox, gantryMat); pole.scale.set(0.25, 10, 0.25); pole.position.set(0, ky + 20, 0); trackG.add(pole);
+      const flag = new THREE.Mesh(new THREE.PlaneGeometry(6, 4), flagMat()); flag.position.set(3.1, ky + 27.8, 0); trackG.add(flag);
+      placedB.push({ x: 0, z: 0, r: 52 });
+      // old town houses on the slopes below, trees in between
+      houses(scatter(140, 1000, CURB + 14, (x, z) => Math.hypot(x, z) > 60), H);
+      forest(scatter(700, 1300, CURB + 6, (x, z) => Math.hypot(x, z) > 55).map(([x, z]) => [x, H(x, z) - 0.3, z, 0.8 + Math.random() * 0.8, Math.random() < 0.4 ? 'pine' : 'leaf']));
+      grandstand(14, -insideSide(), 40);
+      roadSign('KÜTAHYA KALESİ', 30, -insideSide(), '#6b3f1f');
+    },
+
+    snow() {
+      // Murat Dağı in winter: snowy slopes, banks of snow, snow-laden pines and a slippery road
+      const hill = (x, z) => 20 * Math.sin(x * 0.011 + 1.3) * Math.cos(z * 0.009 + 0.4) + 9 * Math.sin(x * 0.023 + z * 0.017);
+      const H = terrainMesh({
+        natural: (x, z) => { const d = distToTrack(x, z); return hill(x, z) + 22 + smooth(120, 520, d) * 90; },
+        color: (h, x, z) => { const v = 0.93 + 0.07 * Math.sin(x * 0.07) * Math.cos(z * 0.05); return [v * 0.97, v * 0.99, v * 1.03]; },
+        map: false
+      });
+      ribbon(CURB, CURB + 3.2, 0.08, snowMat, 1, 4, 1.1); ribbon(-CURB - 3.2, -CURB, 1.1, snowMat, 1, 4, 0.08);
+      trackLim = CURB + 1.0;
+      // snow poles marking the edge
+      const poles = [];
+      for (let i = 0; i < N; i += 8) for (const s of [-1, 1]) { const p = pts[i].clone().addScaledVector(nors[i], s * (CURB + 1.2)); poles.push([p.x, p.y, p.z, 0.1, 1.8, 0.1, 0, (i / 8) % 2 ? '#d22' : '#f5f5f5']); }
+      instanced(unitBox, new THREE.MeshStandardMaterial({ color: 0xffffff }), poles, false);
+      const trunks = [], cones = [], caps = [], rocks = [];
+      for (const [x, z] of scatter(1500, 1300, CURB + 8)) {
+        const y = H(x, z) - 0.3, s = 0.9 + Math.random() * 0.9, r = Math.random() * 6;
+        trunks.push([x, y, z, s, 3 * s, s, r]);
+        cones.push([x, y + 1.6 * s, z, 2.3 * s, 5.2 * s, 2.3 * s, r]);
+        caps.push([x, y + 3.9 * s, z, 1.7 * s, 4.0 * s, 1.7 * s, r]);
+        if (Math.random() < 0.05) { const k = 0.8 + Math.random() * 2; rocks.push([x + 4, y - k * 0.3, z + 3, k * 1.3, k, k * 1.1, r]); }
+      }
+      instanced(unitTrunk, trunkMat, trunks); instanced(unitCone, pineMat, cones); instanced(unitCone, snowMat, caps);
+      instanced(unitRock, rockMat, rocks);
+      // a ski lodge by the start
+      const out = -insideSide();
+      const lodgeP = pts[60].clone().addScaledVector(nors[60], out * (CURB + 22));
+      houses([[lodgeP.x, lodgeP.z]], H);
+      grandstand(14, out, 36);
+      roadSign('MURAT DAĞI · 2312 m', 30, out, '#1e4f7a', 13);
+    },
+
+    highway() {
+      flatGround(trackView.cx, trackView.cz);
+      // concrete barriers, plenty of lamps, a tunnel on the back straight and overhead signs
+      ribbon(CURB, CURB + 2.2, 0.07, walkMat, 1, 3); ribbon(-CURB - 2.2, -CURB, 0.07, walkMat, 1, 3);
+      const barrier = new THREE.MeshStandardMaterial({ map: concreteTex, color: 0xd8d6d0, side: THREE.DoubleSide });
+      wall(CURB + 2.2, 0, 1.0, barrier, 3); wall(-CURB - 2.2, 0, 1.0, barrier, 3);
+      trackLim = CURB + 1.8;
+      // tunnel: the samples along the long straight
+      const tun = [];
+      for (let i = 0; i < N; i++) if (Math.abs(pts[i].z) < 3 && pts[i].x > 140 && pts[i].x < 560) tun.push(i);
+      const inTun = i => i >= tun[0] - 3 && i <= tun[tun.length - 1] + 3;
+      for (let i = 6; i < N; i += 14) if (!inTun(i)) lamp(i, (Math.floor(i / 14) % 2) ? 1 : -1, CURB + 2.6, 1.3);
+      const tw = [], tr = [], tl = [];
+      const W2 = CURB + 2.6;
+      for (const i of tun) {
+        const p = pts[i], rot = Math.atan2(tans[i].x, tans[i].z), L = SEG_LEN(i) + 0.3;
+        for (const s of [-1, 1]) { const q = p.clone().addScaledVector(nors[i], s * W2); tw.push([q.x, 0, q.z, 1.2, 8, L, rot]); }
+        tr.push([p.x, 8, p.z, W2 * 2 + 1.2, 1.2, L, rot]);
+        if (i % 4 === 0) for (const s of [-1, 1]) { const q = p.clone().addScaledVector(nors[i], s * 4.5); tl.push([q.x, 7.7, q.z, 0.5, 0.25, 2.2, rot]); }
+        if (i % 12 === 0) lampSpots.race.push(p.clone());
+      }
+      const tunMat = new THREE.MeshStandardMaterial({ map: concreteTex, color: 0xbab6ae, roughness: 0.9 });
+      instanced(unitBox, tunMat, tw); instanced(unitBox, tunMat, tr);
+      instanced(unitBox, new THREE.MeshBasicMaterial({ color: 0xffe2a8 }), tl, false);
+      // portals with a name board
+      for (const i of [tun[0], tun[tun.length - 1]]) {
+        const sign = textPanel('KALE TÜNELİ', 12, 1.8, '#1f4fa0', '#fff');
+        const back = i === tun[0];
+        sign.position.copy(pts[i]).setY(9.6); sign.rotation.y = Math.atan2(tans[i].x, tans[i].z) + (back ? Math.PI : 0); trackG.add(sign);
+        const face = new THREE.Mesh(unitBox, tunMat); face.scale.set(W2 * 2 + 8, 3.2, 1); face.position.copy(pts[i]).setY(8); face.rotation.y = Math.atan2(nors[i].x, nors[i].z) + Math.PI / 2; trackG.add(face);
+      }
+      // overhead direction signs
+      for (const [i, text] of [[240, 'KÜTAHYA  12 km'], [470, 'ESKİŞEHİR  78 km'], [680, 'AFYON  95 km']]) {
+        const p = pts[i], rot = Math.atan2(tans[i].x, tans[i].z);
+        const beam = new THREE.Mesh(unitBox, gantryMat); beam.scale.set(W2 * 2, 0.5, 0.5); beam.position.copy(p).setY(7.4); beam.rotation.y = rot; trackG.add(beam);
+        for (const s of [-1, 1]) { const post = new THREE.Mesh(unitBox, gantryMat); post.scale.set(0.4, 7.6, 0.4); post.position.copy(p).addScaledVector(nors[i], s * W2).setY(0); trackG.add(post); }
+        const sign = textPanel(text, 11, 2.2, '#1f4fa0', '#fff'); sign.position.copy(p).setY(8.9); sign.rotation.y = rot + Math.PI; trackG.add(sign);
+      }
+      // city lights in the distance, fields and trees nearer
+      const towers = [];
+      for (const [x, z] of scatter(90, 1500, 260)) towers.push([x, 0, z, 12 + Math.random() * 12, 10 + Math.random() * 40, 12 + Math.random() * 12, Math.random() * 6]);
+      instanced(unitBox, cityNightMat, towers);
+      forest(scatter(400, 1200, CURB + 20).map(([x, z]) => [x, 0, z, 0.8 + Math.random() * 0.8, Math.random() < 0.5 ? 'pine' : 'leaf']));
+      grandstand(14, -insideSide(), 50);
+    },
+
+    aizanoi() {
+      flatGround(trackView.cx, trackView.cz);
+      trackLim = CURB + 12;
+      // the Temple of Zeus on its podium: an 8 x 15 colonnade, one corner still standing
+      // close to the road, inside the loop, so you see it on the way past
+      let c = loopCentre(), rot = 0.35;
+      for (const i of [110, 150, 80, 190, 240, 300]) {
+        const q = pts[i].clone().addScaledVector(nors[i], insideSide() * (CURB + 46));
+        if (distToTrack(q.x, q.z) > CURB + 44 && pointInPoly(q.x, q.z, pts)) { c = q; rot = Math.atan2(tans[i].x, tans[i].z); break; }
+      }
+      const P = (dx, dz) => [c.x + dx * Math.cos(rot) + dz * Math.sin(rot), c.z - dx * Math.sin(rot) + dz * Math.cos(rot)];
+      const podium = [], cols = [], caps = [], beams = [], drums = [];
+      podium.push([c.x, 0, c.z, 40, 1.4, 62, rot], [c.x, 1.4, c.z, 36, 1.4, 58, rot]);
+      const cella = [[-8, 0, 1.2, 30], [8, 0, 1.2, 30], [0, -15, 17.2, 1.2]];
+      for (const [dx, dz, w, l] of cella) { const [x, z] = P(dx, dz); podium.push([x, 2.8, z, w, 4 + Math.random() * 5, l, rot]); }
+      const stand = (ix, iz) => (ix <= 2 && iz >= 10) || (ix >= 6 && iz >= 12) || (ix === 7 && iz <= 3);
+      for (let ix = 0; ix < 8; ix++) for (let iz = 0; iz < 15; iz++) {
+        if (ix > 0 && ix < 7 && iz > 0 && iz < 14) continue;
+        const [x, z] = P(-15.75 + ix * 4.5, -26.6 + iz * 3.8);
+        if (stand(ix, iz)) { cols.push([x, 2.8, z, 0.9, 11, 0.9, 0]); caps.push([x, 13.8, z, 2.4, 0.7, 2.4, rot]); }
+        else if (Math.random() < 0.6) cols.push([x, 2.8, z, 0.9, 0.6 + Math.random() * 2.5, 0.9, 0]);
+      }
+      // architraves over the standing columns
+      { const [x, z] = P(-11.25, 20.4); beams.push([x, 14.5, z, 10.5, 1.4, 1.6, rot]); }
+      { const [x, z] = P(-15.75, 22.3); beams.push([x, 14.5, z, 1.6, 1.4, 16, rot]); }
+      { const [x, z] = P(13.5, 24.2); beams.push([x, 14.5, z, 6, 1.4, 1.6, rot]); }
+      for (let k = 0; k < 40; k++) {   // fallen drums around the temple
+        const a = Math.random() * 6.28, r = 24 + Math.random() * 30;
+        const x = c.x + r * Math.sin(a), z = c.z + r * Math.cos(a);
+        if (distToTrack(x, z) > CURB + 4) drums.push([x, 0.9, z, 1.6 + Math.random() * 1.6, 0.9, 0.9, Math.random() * 6]);
+      }
+      instanced(unitBox, marbleMat, podium); instanced(unitCyl, marbleMat, cols); instanced(unitBox, marbleMat, caps);
+      instanced(unitBox, marbleMat, beams); instanced(unitCylLying, marbleMat, drums);
+      placedB.push({ x: c.x, z: c.z, r: 60 });
+      // a colonnaded street along the start straight, half of it fallen
+      const street = [], scaps = [];
+      for (let i = 24; i < 200; i += 9) for (const s of [-1, 1]) {
+        if (Math.random() < 0.25) continue;
+        const p = pts[i].clone().addScaledVector(nors[i], s * (CURB + 5)), h = Math.random() < 0.55 ? 7.5 : 1 + Math.random() * 3;
+        street.push([p.x, 0, p.z, 0.6, h, 0.6, 0]); if (h > 7) scaps.push([p.x, h, p.z, 1.5, 0.5, 1.5, Math.atan2(tans[i].x, tans[i].z)]);
+      }
+      instanced(unitCyl, marbleMat, street); instanced(unitBox, marbleMat, scaps);
+      // low ruined walls, poplars and the village of Çavdarhisar
+      const ruins = [];
+      for (const [x, z] of scatter(60, 900, CURB + 16)) ruins.push([x, 0, z, 1 + Math.random(), 0.6 + Math.random() * 1.6, 5 + Math.random() * 12, Math.random() * 6]);
+      instanced(unitBox, stoneMat, ruins);
+      const pop = [], trunks = [];
+      for (const [x, z] of scatter(260, 1300, CURB + 16)) { const s = 0.9 + Math.random() * 0.6; trunks.push([x, 0, z, s, 3 * s, s, 0]); pop.push([x, 2.5 * s, z, 1.3 * s, 6 * s, 1.3 * s, 0, [0x4f7d36, 0x5a8a3c, 0x46703a][(Math.random() * 3) | 0]]); }
+      instanced(unitTrunk, trunkMat, trunks); instanced(unitBall, leafMat, pop.map(a => { a[1] += a[4]; a[4] *= 1; return a; }));
+      houses(scatter(40, 1400, 160), null);
+      grandstand(14, -insideSide(), 40);
+      roadSign('AİZANOİ ANTİK KENTİ', 12, -insideSide(), '#6b3f1f', 14);
+    },
+
+    frig() {
+      // Phrygian Valley: a dusty dirt road between tuff cones, with the Midas Monument carved in the rock
+      const H = terrainMesh({
+        natural: (x, z) => 10 * Math.sin(x * 0.012 + 0.7) * Math.cos(z * 0.01) + 5 * Math.sin(x * 0.03 + z * 0.02) + 6 + smooth(150, 500, distToTrack(x, z)) * 35,
+        color: (h, x, z) => { const v = 0.04 * Math.sin(x * 0.09 + z * 0.05); return [1.12 + v, 0.95 + v, 0.7 + v]; },
+        flatTo: 10, blend: 60
+      });
+      trackLim = CURB + 9;
+      const tuff = new THREE.MeshStandardMaterial({ color: 0xd6bf95, roughness: 1, flatShading: true });
+      const capMat = new THREE.MeshStandardMaterial({ color: 0x6d5a45, roughness: 1, flatShading: true });
+      const cones = [], caps = [], rocks = [];
+      for (const [x, z] of scatter(260, 1300, CURB + 18)) {
+        const y = H(x, z) - 1, r = 2.5 + Math.random() * 3, h = 9 + Math.random() * 16;
+        cones.push([x, y, z, r, h, r, Math.random() * 6]);
+        if (Math.random() < 0.7) caps.push([x, y + h * 0.93, z, r * 0.55, r * 0.35, r * 0.55, Math.random() * 6]);
+      }
+      for (const [x, z] of scatter(160, 1300, CURB + 14)) { const s = 2 + Math.random() * 6; rocks.push([x, H(x, z) - s * 0.4, z, s * 1.4, s, s * 1.2, Math.random() * 6]); }
+      instanced(unitCone, tuff, cones); instanced(unitBall, capMat, caps); instanced(unitRock, tuff, rocks);
+      // the Midas Monument: a cliff with a carved geometric facade, facing the road
+      const out = -insideSide(), mi = 90;
+      const mp = pts[mi].clone().addScaledVector(nors[mi], out * (CURB + 32));
+      const cliff = new THREE.Mesh(unitBox, tuff); cliff.scale.set(34, 26, 14);
+      cliff.position.set(mp.x, H(mp.x, mp.z) - 2, mp.z); cliff.lookAt(pts[mi].x, cliff.position.y, pts[mi].z); cliff.castShadow = true; trackG.add(cliff);
+      const fTex = canvasTex(256, 256, (g, w, h) => {
+        g.fillStyle = '#cdb68c'; g.fillRect(0, 0, w, h);
+        g.strokeStyle = '#8a7356'; g.lineWidth = 4;
+        g.beginPath(); g.moveTo(10, 60); g.lineTo(128, 6); g.lineTo(246, 60); g.closePath(); g.stroke();
+        for (let y = 70; y < 230; y += 20) for (let x = 14; x < 242; x += 20) { g.strokeRect(x, y, 14, 14); if ((x + y) % 40 === 10) { g.beginPath(); g.moveTo(x + 3, y + 7); g.lineTo(x + 11, y + 7); g.stroke(); } }
+        g.fillStyle = '#5c4a36'; g.fillRect(108, 190, 40, 66);
+      });
+      const facade = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.MeshStandardMaterial({ map: fTex, roughness: 1 }));
+      facade.position.copy(cliff.position).setY(cliff.position.y + 12); facade.rotation.copy(cliff.rotation); facade.translateZ(7.05); trackG.add(facade);
+      placedB.push({ x: mp.x, z: mp.z, r: 24 });
+      forest(scatter(260, 1300, CURB + 12).map(([x, z]) => [x, H(x, z) - 0.3, z, 0.6 + Math.random() * 0.6, Math.random() < 0.6 ? 'pine' : 'leaf']));
+      grandstand(14, out, 34);
+      roadSign('FRİG VADİSİ · MİDAS ANITI', 30, out, '#6b3f1f', 15);
     }
+
   };
 
   function disposeTrack() {
@@ -1040,7 +1355,9 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     for (const p of pts) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z); }
     trackView.cx = (x0 + x1) / 2; trackView.cz = (z0 + z1) / 2; trackView.span = Math.max(x1 - x0, z1 - z0) * 1.17 + 30;
     lampSpots.race.length = 0; placedB.length = 0; shopAt = null;
-    ribbon(HALF, -HALF, 0.06, roadMat, 1, 12);
+    let rm = roadMat;
+    if (def.road) { rm = roadMat.clone(); rm.userData = {}; rm.color.setHex(def.road); }
+    ribbon(HALF, -HALF, 0.06, rm, 1, 12);
     ribbon(HALF, HALF + KERB, 0.08, kerbMat, 1, 4);
     ribbon(-HALF - KERB, -HALF, 0.08, kerbMat, 1, 4);
     startGantry();
@@ -2541,7 +2858,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   let timeMode = night ? 'night' : 'day';
   try { const t = localStorage.getItem('pistTime'); if (TNAME[t]) timeMode = t; } catch (e) {}
   let dayT = 0.3;   // 0 = 06:00 sunrise, 0.5 = 18:00 sunset
-  if (timeMode === 'cycle') night = false; else night = timeMode === 'night';
+  if (timeMode === 'cycle') night = false; else night = timeMode === 'night' || !!track.night;   // the motorway is a night race unless you pick otherwise
   const SUN0 = sunDir.clone(), EXPO0 = renderer.toneMappingExposure;
   const _c1 = new THREE.Color(), WARM = new THREE.Color(0xff8a3c), DUSK = new THREE.Color(0xe39a72);
   const clockStr = () => { const h = (dayT * 24 + 6) % 24; return String(Math.floor(h)).padStart(2, '0') + ':' + String(Math.floor((h % 1) * 60)).padStart(2, '0'); };
@@ -2596,7 +2913,10 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   const rainGeo = new THREE.BufferGeometry(); rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPos, 3));
   const rain = new THREE.LineSegments(rainGeo, new THREE.LineBasicMaterial({ color: 0xaab4c0, transparent: true, opacity: 0.45, depthWrite: false }));
   rain.frustumCulled = false; rain.visible = false; scene.add(rain);
+  const snowPts = new THREE.Points(rainGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.16, transparent: true, opacity: 0.9, depthWrite: false }));
+  snowPts.frustumCulled = false; snowPts.visible = false; scene.add(snowPts);
   const wetMats = new Set();
+  let snowing = false;
   function collectWet() {   // road and pavement materials get darker and shinier in the rain
     scene.traverse(o => { if (!o.isMesh) return; for (const m of [].concat(o.material)) {
       if (m && m.isMeshStandardMaterial && m.map && m.map.image && (m.map.image === asphaltTex.image || m.map.image === concreteTex.image) && !m.userData.dry) { m.userData.dry = { r: m.roughness, c: m.color.clone() }; wetMats.add(m); }
@@ -2606,11 +2926,13 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     const w = weather, n = night;
     if (!wetMats.size) collectWet();
     for (const m of wetMats) { const d = m.userData.dry; m.roughness = w === 'rain' ? Math.min(d.r, 0.3) : d.r; m.color.copy(d.c).multiplyScalar(w === 'rain' ? 0.7 : 1); }
-    rain.visible = w === 'rain';
+    snowing = w !== 'rain' && !!track.snow && S.mode === 'race';
+    rain.visible = w === 'rain'; snowPts.visible = snowing;
     const lowQ = quality === 'low';
     if (w === 'clear') { scene.fog.near = 160; scene.fog.far = lowQ ? 600 : 900; }
     else if (w === 'rain') { scene.fog.near = 40; scene.fog.far = 360; }
     else { scene.fog.near = 6; scene.fog.far = 120; }
+    if (snowing && w === 'clear') { scene.fog.near = 60; scene.fog.far = 520; }
     if (w !== 'clear') {
       const c = n ? (w === 'fog' ? 0x1a1e24 : 0x0d1118) : (w === 'fog' ? 0xc4c9cd : 0x8d959d);
       scene.fog.color.setHex(c); sky.visible = false; scene.background = new THREE.Color(c);
@@ -2625,15 +2947,17 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     applyNight(); if (!paused) toast('Hava: ' + WNAME[weather]);
   }
   function rainStep() {
-    if (!rain.visible) return;
-    rain.position.set(Math.round(camera.position.x), 0, Math.round(camera.position.z));
-    const fall = clock * 22, ox = camera.position.x - rain.position.x, oz = camera.position.z - rain.position.z;
+    if (!rain.visible && !snowPts.visible) return;
+    rain.position.set(Math.round(camera.position.x), 0, Math.round(camera.position.z)); snowPts.position.copy(rain.position);
+    const fall = clock * (snowing ? 2.6 : 22), ox = camera.position.x - rain.position.x, oz = camera.position.z - rain.position.z;
     const by = camera.position.y - 6;
     for (let i = 0; i < RAIN_N; i++) {
       const x = rainSeed[i * 3], z = rainSeed[i * 3 + 2];
       const y = by + ((rainSeed[i * 3 + 1] - fall) % 28 + 28) % 28;
       rainPos[i * 6] = x + ox * 0; rainPos[i * 6 + 1] = y; rainPos[i * 6 + 2] = z;
-      rainPos[i * 6 + 3] = x + 0.08; rainPos[i * 6 + 4] = y + 0.9; rainPos[i * 6 + 5] = z + 0.05;
+      const sx = snowing ? x + Math.sin(clock * 0.9 + i) * 0.6 : x;
+      if (snowing) { rainPos[i * 6] = sx; rainPos[i * 6 + 3] = sx + 0.09; rainPos[i * 6 + 4] = y + 0.09; rainPos[i * 6 + 5] = z + 0.04; }
+      else { rainPos[i * 6 + 3] = x + 0.08; rainPos[i * 6 + 4] = y + 0.9; rainPos[i * 6 + 5] = z + 0.05; }
     }
     rainGeo.attributes.position.needsUpdate = true;
   }
@@ -2941,7 +3265,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       const ang = Math.acos(Math.max(-1, Math.min(1, a.dot(b))));
       // corner speed the player's own car can manage: yaw rate v/R must stay under 2.1 / (1 + v/45)
       const R = 1 / Math.max(ang / (10 * SEG), 1e-4);
-      vC[i] = (-45 + Math.sqrt(2025 + 4 * 94.5 * R * 0.9)) / 2;
+      vC[i] = (-45 + Math.sqrt(2025 + 4 * 94.5 * R * 0.9 * (track.grip || 1))) / 2;
     }
     for (let i = 0; i < N; i++) vAllow[i] = vC[i];
     for (let rep = 0; rep < 2; rep++) for (let k = 2 * N - 1; k >= 0; k--) { const i = k % N; vAllow[i] = Math.min(vC[i], Math.sqrt(vAllow[(i + 1) % N] ** 2 + 2 * 20 * SEG)); }
@@ -3493,7 +3817,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       let dA = want - S.heading; dA = Math.atan2(Math.sin(dA), Math.cos(dA));
       if (dA * near.lat * -1 >= 0 || Math.abs(dA) > 0.05) S.heading += dA * Math.min(1, dt * 2.2 * ex);
     }
-    const grip = (keys.hand ? 1.5 : 1) * (wet && sp > 15 ? 0.78 : 1);
+    const grip = (keys.hand ? 1.5 : 1) * (wet && sp > 15 ? 0.78 : 1) * (!cruise && track.grip ? track.grip : 1);   // snow and dirt slide
     const turnRate = 2.1 * grip * GRIP_MOD * Math.min(1, sp / 8) / (1 + sp / 45);
     S.heading += S.steer * turnRate * Math.sign(S.speed) * dt;
 
@@ -3675,7 +3999,9 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   function selectTrack(id) {
     const def = TRACKS.find(t => t.id === id);
     if (!def || def === track) return;
-    buildTrack(def); computeAI(); buildPool('race'); collectWet(); applyNight(); loadRecords();
+    buildTrack(def); computeAI(); buildPool('race'); collectWet();
+    if (timeMode === 'day') night = !!def.night;
+    applyNight(); loadRecords();
     try { localStorage.setItem('pistTrack', id); } catch (e) {}
   }
   function refreshGarage() {
