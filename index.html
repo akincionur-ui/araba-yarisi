@@ -3656,8 +3656,8 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     { id: 'lofi', name: 'Gece Lo-fi', desc: 'sakin', bpm: 78, root: 50, scale: [0, 2, 3, 5, 7, 9, 10],
       chords: [[0, 3, 7, 10], [5, 9, 12, 15], [-2, 2, 5, 9], [3, 7, 10, 14]], kick: [0, 10], snare: [4, 12], hat: [0, 3, 6, 8, 11, 14], lead: 'sparse', leadWave: 'sine', bassWave: 'triangle', swing: 0.12 }
   ];
-  let station = 0;
-  try { station = Math.max(0, STATIONS.findIndex(s => s.id === localStorage.getItem('pistRadio'))); } catch (e) {}
+  let station = 1;   // the radio is on unless you've switched it off
+  try { const sv = localStorage.getItem('pistRadio'); if (sv) station = Math.max(0, STATIONS.findIndex(s => s.id === sv)); } catch (e) {}
   const RD = { gain: null, timer: null, next: 0, step: 0, bar: 0, phrase: [] };
   function radioVoice(type, freq, t, dur, vol, cutoff = 2400, attack = 0.005) {
     const ctx = A.ctx, o = ctx.createOscillator(), g = ctx.createGain(), f = ctx.createBiquadFilter();
@@ -3691,7 +3691,8 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   function radioTick() {
     const st = STATIONS[station]; if (!st.bpm || !A.ctx) return;
     const ctx = A.ctx, spb = 60 / st.bpm / 4;
-    while (RD.next < ctx.currentTime + 0.3) {
+    if (RD.next < ctx.currentTime + 0.02) RD.next = ctx.currentTime + 0.05;   // a slow frame held us up: skip ahead rather than schedule notes in the past (they'd be silent)
+    while (RD.next < ctx.currentTime + 0.5) {
       const k = RD.step % 16, t = RD.next + (k % 2 ? (st.swing || 0) * spb : 0);
       if (k === 0) { RD.bar++; if (RD.bar % 4 === 1 || !RD.phrase.length) RD.phrase = makePhrase(st); }
       const ch = st.chords[RD.bar % st.chords.length], root = st.root;
@@ -3713,11 +3714,13 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   }
   function radioStart() {
     if (!A.ctx) return;
-    if (!RD.gain) { RD.gain = A.ctx.createGain(); RD.gain.gain.value = 0.45; RD.gain.connect(A.master); }
+    if (!RD.gain) { RD.gain = A.ctx.createGain(); RD.gain.gain.value = 1.1;
+      const comp = A.ctx.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4;
+      RD.gain.connect(comp).connect(A.master); }
     clearInterval(RD.timer); RD.timer = null;
     if (!STATIONS[station].bpm) return;
     RD.next = A.ctx.currentTime + 0.1; RD.step = 0; RD.bar = 0; RD.phrase = [];
-    RD.timer = setInterval(radioTick, 90);
+    RD.timer = setInterval(radioTick, 60);
   }
   function radioName() { const st = STATIONS[station]; return '📻 Radyo: ' + st.name + (st.desc ? ' (' + st.desc + ')' : ''); }
   function cycleRadio() {
@@ -3747,7 +3750,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     A.osc1.frequency.setTargetAtTime(f, t, 0.04);
     A.osc2.frequency.setTargetAtTime(f * 0.5 + 1.5, t, 0.04);
     A.engFilter.frequency.setTargetAtTime(500 + rpm * 1500 + (gas ? 700 : 0), t, 0.08);
-    A.engGain.gain.setTargetAtTime(0.14 + (gas ? 0.12 : 0.03) + rpm * 0.06, t, 0.08);
+    A.engGain.gain.setTargetAtTime((0.14 + (gas ? 0.12 : 0.03) + rpm * 0.06) * (STATIONS[station].bpm ? 0.55 : 1), t, 0.08);   // engine steps back while the radio plays
     const slip = (keys.hand && sp > 6) || (Math.abs(S.steer) > 0.6 && sp > 32);
     A.screech.gain.setTargetAtTime(slip && !off ? 0.22 : 0, t, 0.06);
     A.rumble.gain.setTargetAtTime(off && sp > 2 ? Math.min(0.5, sp / 30) : 0, t, 0.08);
@@ -4357,6 +4360,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     $('garage').hidden = true;
     initAudio();
     reset();
+    if (STATIONS[station].bpm) setTimeout(() => toast(radioName() + ' · T ile değiştir'), 900);
   }
   function selectTrack(id) {
     const def = TRACKS.find(t => t.id === id);
@@ -4464,6 +4468,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   function frame(now) {
     const dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
     if (ready && !paused) step(dt);
+    if (RD.timer && A.ctx) radioTick();
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
   }
