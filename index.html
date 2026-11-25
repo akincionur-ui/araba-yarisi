@@ -82,7 +82,20 @@
   #vig { position: fixed; inset: 0; pointer-events: none; z-index: 1; background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.55) 100%); opacity: 0; }
   /* garage tuning */
   #gModBtn { font-family: var(--font-body); font-size: 14px; font-weight: 700; padding: 10px 12px; border-radius: 9px; border: 2px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.06); color: inherit; cursor: pointer; text-align: left; }
-  #gModBtn[aria-expanded="true"] { border-color: var(--accent); }
+  #gModBtn[aria-expanded="true"], #gGoalBtn[aria-expanded="true"] { border-color: var(--accent); }
+  #gRepair { font-family: var(--font-body); font-size: 14px; font-weight: 700; padding: 10px 12px; border-radius: 9px; border: 2px solid #ff8a3c; background: rgba(255,120,40,0.14); color: inherit; cursor: pointer; text-align: left; }
+  #gGoalBtn { font-family: var(--font-body); font-size: 14px; font-weight: 700; padding: 10px 12px; border-radius: 9px; border: 2px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.06); color: inherit; cursor: pointer; text-align: left; }
+  #goalPop { position: fixed; left: 50%; top: calc(12px + env(safe-area-inset-top, 0px)); transform: translate(-50%, -30px); opacity: 0; transition: opacity .35s, transform .35s; display: flex; gap: 12px; align-items: center; padding: 12px 20px 12px 14px; border-radius: 14px; background: linear-gradient(135deg, rgba(30,26,10,.92), rgba(60,46,8,.92)); border: 2px solid #ffcc33; color: #fff; z-index: 40; pointer-events: none; box-shadow: 0 8px 30px rgba(0,0,0,.4); }
+  #goalPop.on { opacity: 1; transform: translate(-50%, 0); }
+  #goalPop > span { font-size: 34px; }
+  #goalPop small { display: block; font-size: 11px; letter-spacing: .12em; color: #ffcc33; }
+  #goalPop b { display: block; font-size: 18px; }
+  #goalPop i { font-style: normal; color: #7ee08a; font-weight: 700; }
+  #gGoals { display: grid; gap: 4px; padding: 10px; border-radius: 10px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); font-size: 14px; }
+  #gGoals .grow { display: grid; grid-template-columns: 26px 1fr auto; gap: 8px; align-items: center; opacity: 0.75; }
+  #gGoals .grow.done { opacity: 1; color: #7ee08a; }
+  #gGoals .grow small { display: block; color: var(--hud-dim); font-size: 12px; }
+  #gGoals .grow b { font-size: 13px; white-space: nowrap; }
   #gMods { display: grid; gap: 6px; padding: 10px; border-radius: 10px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); }
   #gMods .mrow { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; font-size: 14px; }
   #gMods .mrow small { display: block; color: var(--hud-dim); font-size: 12px; }
@@ -190,7 +203,7 @@
   <b>W / ↑</b> gaz · <b>S / ↓</b> fren, geri<br>
   <b>A D / ← →</b> direksiyon · <b>Boşluk</b> el freni<br>
   <b>R</b> yeniden başla · <b>C</b> kamera · <b>B</b> renk<br>
-  <b>Shift</b> nitro · <b>H</b> korna · <b>N</b> saat · <b>Y</b> hava · <b>Esc / P</b> duraklat
+  <b>Shift</b> nitro · <b>H</b> korna · <b>T</b> radyo · <b>N</b> saat · <b>Y</b> hava · <b>Esc / P</b> duraklat
 </div>
 
 <div id="speedo" class="hud panel analog">
@@ -219,6 +232,7 @@
   </div>
 </div>
 
+<div id="goalPop" aria-live="polite"></div>
 <button id="mute" class="panel" type="button">🔊 Ses açık (M)</button>
 <button id="pauseBtn" class="panel" type="button" aria-label="Duraklat">⏸ Duraklat</button>
 
@@ -231,6 +245,8 @@
     <button id="mCam" type="button"><span>Kamera: <span id="mCamName">Takip</span></span> <kbd>C</kbd></button>
     <button id="mQuality" type="button"><span id="mQualityName">Grafik: Yüksek</span> <kbd>G</kbd></button>
     <button id="mWeather" type="button"><span id="mWeatherName">Hava: Açık</span> <kbd>Y</kbd></button>
+    <button id="mRadio" type="button"><span id="mRadioName">Radyo: Kapalı</span> <kbd>T</kbd></button>
+    <button id="mDamage" type="button"><span id="mDamageName">Hasar: Kapalı</span> <kbd>çarpınca ezilme</kbd></button>
     <button id="mEasy" type="button"><span id="mEasyName">Kolay sürüş: Açık</span> <kbd>gaz + viraj yardımı</kbd></button>
     <button id="mSteer" type="button"><span id="mSteerName">Direksiyon: Kaydır</span> <kbd>dokunmatik</kbd></button>
     <button id="mNight" type="button"><span id="mNightName">Saat: Gündüz</span> <kbd>N</kbd></button>
@@ -248,6 +264,9 @@
     <div id="gMode" class="gmode" role="group" aria-label="Oyun modu"><button type="button" data-mode="race">Yarış<small>Tur ve süre</small></button><button type="button" data-mode="cruise">Şehir gezintisi<small>Okul, dükkanlar, serbest sürüş</small></button></div>
     <button id="gModBtn" type="button" aria-expanded="false">🔧 Modifiye<small style="display:block;font-weight:400;font-size:12px;color:var(--hud-dim)">Motor, lastik, nitro, spoiler, neon, cam filmi</small></button>
     <div id="gMods" hidden></div>
+    <button id="gRepair" type="button" hidden></button>
+    <button id="gGoalBtn" type="button" aria-expanded="false">🎯 Görevler<small id="gGoalSub" style="display:block;font-weight:400;font-size:12px;color:var(--hud-dim)"></small></button>
+    <div id="gGoals" hidden></div>
     <div id="gChamp" class="gmode" role="group" aria-label="Yarış türü"><button type="button" data-champ="0">Tek yarış<small>Seçtiğin pistte 3 tur</small></button><button type="button" data-champ="1">🏆 Şampiyona<small>4 kupa, her biri 4 pist, puan tablosu</small></button></div>
     <div id="gCups" class="gmode" role="group" aria-label="Kupa"></div>
     <div id="gTrack" class="gmode" role="group" aria-label="Pist"></div>
@@ -1428,6 +1447,13 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   let mods = {};
   try { mods = JSON.parse(localStorage.getItem('pistMods') || '{}') || {}; } catch (e) {}
   const modOf = id => (mods[id] = mods[id] || {});
+  // damage state (see takeDamage)
+  let damageOn = false;
+  try { damageOn = localStorage.getItem('pistDamage') === '1'; } catch (e) {}
+  const dmgOf = {};
+  try { Object.assign(dmgOf, JSON.parse(localStorage.getItem('pistDmg') || '{}')); } catch (e) {}
+  const saveDmg = () => { try { localStorage.setItem('pistDmg', JSON.stringify(dmgOf)); } catch (e) {} };
+  const curDmg = () => damageOn ? (dmgOf[CARS[carIdx].id] || 0) : 0;
   const saveMods = () => { try { localStorage.setItem('pistMods', JSON.stringify(mods)); } catch (e) {} };
   const isOwned = id => owned.has(id) || !PRICES[id];
   function saveMoney() {
@@ -1435,7 +1461,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     const a = document.getElementById('money'), b = document.getElementById('gMoney');
     if (a) a.textContent = tl(money); if (b) b.textContent = 'Paran: ' + tl(money);
   }
-  function addMoney(n) { if (n > 0) { money += Math.round(n); saveMoney(); } }
+  function addMoney(n) { if (n > 0) { money += Math.round(n); if (typeof ST !== 'undefined') ST.earned += Math.round(n); saveMoney(); } }
   PAINTS.push({ name: 'Turuncu', c: 0xc4561d }, { name: 'Turkuaz', c: 0x1f9a9e });
   const rubberMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 });
   const paint = new THREE.MeshPhysicalMaterial({ color: PAINTS[0].c, metalness: 0.6, roughness: 0.35, clearcoat: 1, clearcoatRoughness: 0.03 });
@@ -3172,6 +3198,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     if (S.phase !== 'free') return;
     const d = Math.abs(S.speed) * dt;
     R.dist += d; R.clean += d;
+    { const k0 = Math.floor(ST.cruiseKm); ST.cruiseKm += d / 1000; if (Math.floor(ST.cruiseKm) > k0) goalCheck(); }
     fuelStep(dt, d);
     if (R.clean >= 400) { R.clean = 0; reward(3, 'Temiz sürüş'); }
     const lim = speedLimit(); $('limit').textContent = lim;
@@ -3212,6 +3239,54 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   let cup = CUPS[0], cupsWon = [];
   try { cup = CUPS.find(c => c.id === localStorage.getItem('pistCup')) || CUPS[0]; cupsWon = JSON.parse(localStorage.getItem('pistCups') || '[]'); } catch (e) {}
   const cupTrack = k => TRACKS.find(t => t.id === champ.cup.tracks[k]);
+
+  // ---------- Goals: badges with a cash reward, checked whenever something noteworthy happens ----------
+  const ST = { races: 0, wins: 0, tracks: [], winsOn: [], driftBest: 0, driftTotal: 0, maxKmh: 0, clean: 0, noNitroWin: 0, cruiseKm: 0, earned: 0, escapeBest: 0, crashes: 0 };
+  let goalsDone = [];
+  try { Object.assign(ST, JSON.parse(localStorage.getItem('pistStats') || '{}')); goalsDone = JSON.parse(localStorage.getItem('pistGoals') || '[]'); } catch (e) {}
+  const GOALS = [
+    { id: 'first', icon: '🏁', name: 'İlk yarış', desc: 'Bir yarışı bitir', reward: 500, ok: s => s.races >= 1 },
+    { id: 'win', icon: '🥇', name: 'İlk zafer', desc: 'Bir yarışı birinci bitir', reward: 1000, ok: s => s.wins >= 1 },
+    { id: 'win10', icon: '🏆', name: 'Usta pilot', desc: '10 yarış kazan', reward: 4000, ok: s => s.wins >= 10 },
+    { id: 'drift', icon: '💨', name: 'Drift ustası', desc: 'Tek driftte 300 puan topla', reward: 1500, ok: s => s.driftBest >= 300 },
+    { id: 'drift5k', icon: '🌪️', name: 'Drift kralı', desc: 'Toplam 5.000 drift puanı', reward: 3000, ok: s => s.driftTotal >= 5000 },
+    { id: 'speed', icon: '⚡', name: 'Işık hızı', desc: '300 km/sa hıza çık', reward: 2000, ok: s => s.maxKmh >= 300 },
+    { id: 'snow', icon: '❄️', name: 'Kar kaplanı', desc: "Murat Dağı'nda birinci ol", reward: 2000, ok: s => s.winsOn.includes('snow') },
+    { id: 'night', icon: '🌙', name: 'Gece kuşu', desc: "Gece Otoyolu'nda birinci ol", reward: 2000, ok: s => s.winsOn.includes('highway') },
+    { id: 'all', icon: '🗺️', name: 'Gezgin', desc: '9 pistin hepsinde yarış bitir', reward: 3000, ok: s => TRACKS.every(t => s.tracks.includes(t.id)) },
+    { id: 'clean', icon: '✨', name: 'Temiz sürüş', desc: 'Duvara hiç sürtmeden yarış bitir', reward: 1500, ok: s => s.clean >= 1 },
+    { id: 'nonitro', icon: '🧘', name: 'Saf yetenek', desc: 'Nitro kullanmadan birinci ol', reward: 1500, ok: s => s.noNitroWin >= 1 },
+    { id: 'cup', icon: '🏅', name: 'Kupa avcısı', desc: 'Bir kupa kazan', reward: 3000, ok: () => cupsWon.length >= 1 },
+    { id: 'legend', icon: '👑', name: 'Efsane', desc: "Efsane Kupası'nı kazan", reward: 10000, ok: () => cupsWon.includes('efsane') },
+    { id: 'city', icon: '🚗', name: 'Şehir sürücüsü', desc: 'Gezintide toplam 10 km yol yap', reward: 1500, ok: s => s.cruiseKm >= 10 },
+    { id: 'police', icon: '🚓', name: 'Kaçak', desc: 'Polis kovalamacasında 60 sn yakalanma', reward: 3000, ok: s => s.escapeBest >= 60 },
+    { id: 'tuned', icon: '🔧', name: 'Tam donanım', desc: 'Bir arabanın motorunu 3. seviyeye çıkar', reward: 1000, ok: () => Object.values(mods).some(m => m.engine >= 3) },
+    { id: 'garage', icon: '🚘', name: 'Koleksiyoncu', desc: '6 arabaya sahip ol', reward: 2500, ok: () => CARS.filter(c => isOwned(c.id)).length >= 6 },
+    { id: 'rich', icon: '💰', name: 'Zengin', desc: 'Toplam 100.000 ₺ kazan', reward: 5000, ok: s => s.earned >= 100000 }
+  ];
+  let goalQueue = [];
+  function goalCheck() {
+    try { localStorage.setItem('pistStats', JSON.stringify(ST)); } catch (e) {}
+    for (const g of GOALS) if (!goalsDone.includes(g.id) && g.ok(ST)) {
+      goalsDone.push(g.id); money += g.reward; ST.earned += g.reward; saveMoney();
+      goalQueue.push(g);
+    }
+    try { localStorage.setItem('pistGoals', JSON.stringify(goalsDone)); } catch (e) {}
+    if (goalQueue.length && !goalCheck.busy) goalShow();
+  }
+  function goalShow() {   // one banner at a time
+    const g = goalQueue.shift(); if (!g) { goalCheck.busy = false; return; }
+    goalCheck.busy = true;
+    const el = $('goalPop'); el.innerHTML = `<span>${g.icon}</span><div><small>GÖREV TAMAMLANDI</small><b>${g.name}</b><i>+${tl(g.reward)}</i></div>`;
+    el.classList.add('on'); [784, 988, 1175].forEach((f, k) => beep(f, 0.16, k * 0.09, 0.22));
+    setTimeout(() => { el.classList.remove('on'); setTimeout(goalShow, 500); }, 3200);
+  }
+  function renderGoals() {
+    $('gGoalSub').textContent = `${goalsDone.length} / ${GOALS.length} tamamlandı · para ve rozet kazan`;
+    if ($('gGoals').hidden) return;
+    $('gGoals').innerHTML = GOALS.map(g => { const d = goalsDone.includes(g.id);
+      return `<div class="grow${d ? ' done' : ''}"><span>${d ? g.icon : '🔒'}</span><div>${g.name}<small>${g.desc}</small></div><b>${d ? '✓ ' : ''}${tl(g.reward)}</b></div>`; }).join('');
+  }
   function finishRace() {
     const now = clock - S.raceT0;
     // everyone's time: finished rivals exactly, the rest estimated from where they are now
@@ -3227,6 +3302,9 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     if (newRec) { bestRace = now; try { localStorage.setItem(recKey('pistBestRace'), String(now)); } catch (e) {} }
     S.phase = 'over';
     let earn = PRIZE[rank - 1] + (newRec ? 250 : 0);
+    ST.races++; if (!ST.tracks.includes(track.id)) ST.tracks.push(track.id);
+    if (rank === 1) { ST.wins++; if (!ST.winsOn.includes(track.id)) ST.winsOn.push(track.id); if (!S.usedNitro) ST.noNitroWin++; }
+    if (!S.scraped) ST.clean++;
     let champHtml = '';
     $('overRestart').firstChild.textContent = 'Yeniden başla ';
     if (champ) {
@@ -3248,7 +3326,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
         $('overRestart').firstChild.textContent = 'Sonraki yarış: ' + cupTrack(champ.round + 1).name + ' ';
       }
     } else $('overTitle').textContent = rank === 1 ? '🏆 KAZANDIN!' : `YARIŞ BİTTİ: ${rank}. OLDUN`;
-    addMoney(earn);
+    addMoney(earn); goalCheck();
     $('overText').innerHTML = '<table style="width:100%;border-collapse:collapse;margin-bottom:8px">' + rows.map((r, k) =>
       `<tr style="${r.me ? 'color:#ffcc33;font-weight:700' : ''}"><td style="padding:2px 6px 2px 0">${k + 1}.</td><td>${r.name}</td><td style="text-align:right;font-variant-numeric:tabular-nums">${r.est ? '≈ ' : ''}${fmt(r.t)}</td></tr>`).join('') + '</table>' +
       '<small>Tur sürelerin: ' + S.laps.map(fmt).join(' · ') + '</small><br>' +
@@ -3382,6 +3460,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     }
     const i = N - 6;
     S.pos.copy(pts[i]); S.heading = Math.atan2(tans[i].x, tans[i].z);
+    S.usedNitro = false; S.scraped = false;
     S.speed = 0; S.steer = 0; S.idx = i; S.idxStart = i; S.lap = 1; S.laps = []; $('over').hidden = true; S.half = false; S.last = null;
     resetRivals();
     S.phase = 'count'; S.countT = 3.5; S.lastShown = null;
@@ -3421,6 +3500,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     A.rainG = ctx.createGain(); A.rainG.gain.value = weather === 'rain' ? 0.16 : 0;
     noise.connect(hp).connect(A.rainG).connect(A.master);
     noise.start();
+    radioStart();
   }
   function beep(freq, dur, when = 0, vol = 0.35) {
     if (!A.ctx) return;
@@ -3446,6 +3526,88 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     const { g, os } = A.horn, t = A.ctx.currentTime;
     g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(g.gain.value, t); g.gain.linearRampToValueAtTime(0, t + 0.05);
     os.forEach(o => o.stop(t + 0.07)); A.horn = null;
+  }
+  // ---------- Radio: three stations of music composed on the fly with Web Audio ----------
+  const MIDI = n => 440 * Math.pow(2, (n - 69) / 12);
+  const STATIONS = [
+    { id: 'off', name: 'Kapalı' },
+    { id: 'synth', name: 'Son Düzlük FM', desc: 'elektronik', bpm: 118, root: 57, scale: [0, 2, 3, 5, 7, 8, 10],
+      chords: [[0, 3, 7], [-4, 0, 3], [3, 7, 10], [-2, 2, 5]], kick: [0, 4, 8, 12], snare: [4, 12], hat: [2, 6, 10, 14], lead: 'arp', leadWave: 'square', bassWave: 'sawtooth' },
+    { id: 'anadolu', name: 'Anadolu Rock', desc: 'hicaz makamı', bpm: 104, root: 50, scale: [0, 1, 4, 5, 7, 8, 10],
+      chords: [[0, 4, 7], [0, 4, 7], [-2, 1, 5], [0, 4, 7]], kick: [0, 7, 8, 10], snare: [4, 12], hat: [0, 2, 4, 6, 8, 10, 12, 14], lead: 'saz', leadWave: 'triangle', bassWave: 'square' },
+    { id: 'lofi', name: 'Gece Lo-fi', desc: 'sakin', bpm: 78, root: 50, scale: [0, 2, 3, 5, 7, 9, 10],
+      chords: [[0, 3, 7, 10], [5, 9, 12, 15], [-2, 2, 5, 9], [3, 7, 10, 14]], kick: [0, 10], snare: [4, 12], hat: [0, 3, 6, 8, 11, 14], lead: 'sparse', leadWave: 'sine', bassWave: 'triangle', swing: 0.12 }
+  ];
+  let station = 0;
+  try { station = Math.max(0, STATIONS.findIndex(s => s.id === localStorage.getItem('pistRadio'))); } catch (e) {}
+  const RD = { gain: null, timer: null, next: 0, step: 0, bar: 0, phrase: [] };
+  function radioVoice(type, freq, t, dur, vol, cutoff = 2400, attack = 0.005) {
+    const ctx = A.ctx, o = ctx.createOscillator(), g = ctx.createGain(), f = ctx.createBiquadFilter();
+    o.type = type; o.frequency.value = freq; f.type = 'lowpass'; f.frequency.value = cutoff;
+    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + attack); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(f).connect(g).connect(RD.gain); o.start(t); o.stop(t + dur + 0.05);
+  }
+  function radioNoise(t, dur, vol, type, freq) {
+    const ctx = A.ctx;
+    if (!RD.noise) { const b = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate), d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; RD.noise = b; }
+    const src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+    src.buffer = RD.noise; f.type = type; f.frequency.value = freq;
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f).connect(g).connect(RD.gain); src.start(t, Math.random() * 0.5); src.stop(t + dur + 0.02);
+  }
+  function radioKick(t, vol) {
+    const ctx = A.ctx, o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.12);
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+    o.connect(g).connect(RD.gain); o.start(t); o.stop(t + 0.32);
+  }
+  function makePhrase(st) {   // a new 16-step melody, reused for a few bars so it sounds like a tune
+    const out = []; let deg = 4 + ((Math.random() * 3) | 0);
+    for (let k = 0; k < 16; k++) {
+      const play = st.lead === 'arp' ? true : st.lead === 'saz' ? (k % 2 === 0 || Math.random() < 0.35) : (k % 4 === 0 && Math.random() < 0.7) || Math.random() < 0.08;
+      deg = Math.max(0, Math.min(13, deg + [-2, -1, -1, 0, 1, 1, 2][(Math.random() * 7) | 0]));
+      out.push(play ? deg : null);
+    }
+    return out;
+  }
+  function radioTick() {
+    const st = STATIONS[station]; if (!st.bpm || !A.ctx) return;
+    const ctx = A.ctx, spb = 60 / st.bpm / 4;
+    while (RD.next < ctx.currentTime + 0.3) {
+      const k = RD.step % 16, t = RD.next + (k % 2 ? (st.swing || 0) * spb : 0);
+      if (k === 0) { RD.bar++; if (RD.bar % 4 === 1 || !RD.phrase.length) RD.phrase = makePhrase(st); }
+      const ch = st.chords[RD.bar % st.chords.length], root = st.root;
+      if (st.kick.includes(k)) radioKick(t, st.id === 'lofi' ? 0.5 : 0.75);
+      if (st.snare.includes(k)) { radioNoise(t, st.id === 'lofi' ? 0.12 : 0.18, st.id === 'lofi' ? 0.2 : 0.32, 'bandpass', 1800); radioVoice('triangle', 190, t, 0.08, 0.15); }
+      if (st.hat.includes(k)) radioNoise(t, 0.04, st.id === 'lofi' ? 0.05 : 0.09, 'highpass', 7000);
+      // bass
+      if (st.id === 'synth' ? k % 2 === 0 : st.id === 'anadolu' ? [0, 3, 6, 8, 11, 14].includes(k) : [0, 7, 10].includes(k))
+        radioVoice(st.bassWave, MIDI(root - 24 + ch[0] + (st.id === 'synth' && k % 4 === 2 ? 12 : 0)), t, spb * 1.8, st.id === 'lofi' ? 0.22 : 0.2, 600);
+      // chords: pad at the start of the bar (lofi: electric piano stabs)
+      if (k === 0 || (st.id === 'lofi' && k === 8)) for (const n of ch) radioVoice(st.id === 'lofi' ? 'sine' : 'sawtooth', MIDI(root + n), t, st.id === 'lofi' ? spb * 7 : spb * 15, st.id === 'lofi' ? 0.07 : 0.035, st.id === 'lofi' ? 1800 : 1200, 0.04);
+      // lead
+      let note = null;
+      if (st.lead === 'arp') note = root + 12 + ch[(k + (RD.bar % 2)) % ch.length] + (k >= 8 ? 12 : 0);
+      else { const d = RD.phrase[k]; if (d != null) note = root + 12 + st.scale[d % 7] + 12 * Math.floor(d / 7); }
+      if (note != null) radioVoice(st.leadWave, MIDI(note), t, st.lead === 'saz' ? spb * 1.6 : st.lead === 'arp' ? spb * 0.9 : spb * 5, st.lead === 'sparse' ? 0.09 : 0.06, st.lead === 'saz' ? 3200 : 2200, 0.003);
+      RD.next += spb; RD.step++;
+    }
+  }
+  function radioStart() {
+    if (!A.ctx) return;
+    if (!RD.gain) { RD.gain = A.ctx.createGain(); RD.gain.gain.value = 0.45; RD.gain.connect(A.master); }
+    clearInterval(RD.timer); RD.timer = null;
+    if (!STATIONS[station].bpm) return;
+    RD.next = A.ctx.currentTime + 0.1; RD.step = 0; RD.bar = 0; RD.phrase = [];
+    RD.timer = setInterval(radioTick, 90);
+  }
+  function radioName() { const st = STATIONS[station]; return '📻 Radyo: ' + st.name + (st.desc ? ' (' + st.desc + ')' : ''); }
+  function cycleRadio() {
+    station = (station + 1) % STATIONS.length;
+    try { localStorage.setItem('pistRadio', STATIONS[station].id); } catch (e) {}
+    initAudio(); radioStart();
+    const el = document.getElementById('mRadioName'); if (el) el.textContent = radioName().slice(3);
+    toast(radioName());
   }
   function lapChime(best) { [660, 880, best ? 1320 : 990].forEach((f, k) => beep(f, 0.22, k * 0.12, 0.25)); }
   const COARSE = matchMedia('(pointer: coarse)').matches;
@@ -3525,6 +3687,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     if (e.code === 'KeyM') { setMute(!A.muted); refreshMenu(); }
     if (e.code === 'KeyR' && S.phase !== 'garage') { reset(); if (paused) setPaused(false); }
     if (e.code === 'KeyC') cycleCam();
+    if (e.code === 'KeyT') cycleRadio();
     if (e.code === 'KeyB') { nextPaint(); refreshMenu(); }
     if (e.code === 'KeyG') toggleQuality();
     if (e.code === 'KeyN') toggleNight();
@@ -3593,6 +3756,14 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   document.getElementById('mSteer').addEventListener('click', cycleSteer);
   let easy = COARSE;
   try { const v = localStorage.getItem('pistEasy'); if (v === '1' || v === '0') easy = v === '1'; } catch (e) {}
+  function applyDamageName() { document.getElementById('mDamageName').textContent = 'Hasar: ' + (damageOn ? 'Açık' : 'Kapalı'); }
+  applyDamageName();
+  document.getElementById('mRadioName').textContent = radioName().slice(3);
+  document.getElementById('mRadio').addEventListener('click', cycleRadio);
+  document.getElementById('mDamage').addEventListener('click', () => {
+    damageOn = !damageOn; try { localStorage.setItem('pistDamage', damageOn ? '1' : '0'); } catch (e) {}
+    applyDamageName(); toast(damageOn ? 'Hasar açık: çarpınca araba ezilir, garajda tamir edilir' : 'Hasar kapalı');
+  });
   function applyEasy() { document.body.classList.toggle('easy', easy); document.getElementById('mEasyName').textContent = 'Kolay sürüş: ' + (easy ? 'Açık' : 'Kapalı'); }
   document.getElementById('mEasy').addEventListener('click', () => { easy = !easy; try { localStorage.setItem('pistEasy', easy ? '1' : '0'); } catch (e) {} applyEasy(); toast('Kolay sürüş: ' + (easy ? 'açık (otomatik gaz, virajda fren)' : 'kapalı')); });
   applyEasy();
@@ -3703,7 +3874,51 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   const smoke = particlePool(140, 0xd9d9d6, false, 1.1), sparks = particlePool(90, 0xffb347, true, 0.22);
   const _fp = new THREE.Vector3(), _fv = new THREE.Vector3(), _fside = new THREE.Vector3();
   let shake = 0, lastImpact = 0;
-  function impact(strength) {   // camera shake and a burst of sparks at the front of the car
+  // ---------- Damage (optional, off by default): dents in the bodywork, less power, smoke; repaired in the garage ----------
+  const _dP = new THREE.Vector3(), _dC = new THREE.Vector3(), _dV = new THREE.Vector3(), _dD = new THREE.Vector3(), _dI = new THREE.Matrix4(), _dS = new THREE.Sphere();
+  function dent(lx, lz, strength) {   // push the panels near the hit point inwards
+    const id = CARS[carIdx].id, e = carCache[id], cfg = CARS[carIdx]; if (!e) return;
+    const L = (cfg.length || 4.5) / 2, W = L * 0.43, k = Math.hypot(lx, lz) || 1;
+    car.updateMatrixWorld(true);
+    const P = car.localToWorld(_dP.set(lx / k * W * 1.05, 0.7, lz / k * L * 1.02)), C = car.localToWorld(_dC.set(0, 0.6, 0)).clone();
+    const wheelSet = new Set(); for (const w of wheels) w.pivot && w.pivot.traverse(o => wheelSet.add(o));
+    e.root.traverse(o => {
+      if (!o.isMesh || wheelSet.has(o)) return;
+      const g0 = o.userData.origGeo || o.geometry;
+      if (!g0.boundingSphere) g0.computeBoundingSphere();
+      _dS.copy(g0.boundingSphere).applyMatrix4(o.matrixWorld);
+      if (_dS.distanceToPoint(P) > 1.0) return;
+      if (!o.userData.origGeo) { o.userData.origGeo = o.geometry; o.geometry = o.geometry.clone(); }
+      const pos = o.geometry.attributes.position, sc = o.matrixWorld.getMaxScaleOnAxis();
+      _dI.copy(o.matrixWorld).invert();
+      const lp = _dV.copy(P).applyMatrix4(_dI).clone(), lc = C.clone().applyMatrix4(_dI);
+      const R = 0.95 / sc, depth = Math.min(0.16, 0.3 * strength) / sc;
+      for (let i = 0; i < pos.count; i++) {
+        _dV.fromBufferAttribute(pos, i);
+        const d = _dV.distanceTo(lp); if (d >= R) continue;
+        const f = (1 - d / R) ** 2 * (0.7 + Math.random() * 0.6);
+        _dD.copy(lc).sub(_dV).normalize();
+        _dV.addScaledVector(_dD, depth * f);
+        pos.setXYZ(i, _dV.x, _dV.y, _dV.z);
+      }
+      pos.needsUpdate = true;
+    });
+  }
+  function repairVisual(id) {
+    const e = carCache[id]; if (!e) return;
+    e.root.traverse(o => { if (o.userData.origGeo) { o.geometry.dispose(); o.geometry = o.userData.origGeo; delete o.userData.origGeo; } });
+  }
+  function takeDamage(strength, lx, lz) {
+    if (!damageOn || S.phase === 'garage') return;
+    const id = CARS[carIdx].id, before = dmgOf[id] || 0;
+    dmgOf[id] = Math.min(1, before + strength * 0.18); saveDmg();
+    dent(lx, lz, strength);
+    for (const t of [0.25, 0.5, 0.75]) if (before < t && dmgOf[id] >= t) toastBad(`Araban hasar aldı: %${Math.round(dmgOf[id] * 100)} · motor gücü düştü`);
+  }
+  const repairCost = id => Math.max(100, Math.round((dmgOf[id] || 0) * 3000 / 50) * 50);
+
+  function impact(strength, lx = 0, lz = 1) {   // camera shake and a burst of sparks at the front of the car
+    takeDamage(strength, lx, lz);
     shake = Math.min(1, shake + strength);
     if (clock - lastImpact < 0.08) return; lastImpact = clock;
     const dir = _fv.set(Math.sin(S.heading), 0, Math.cos(S.heading));
@@ -3716,6 +3931,11 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   function fxStep(dt, skidding, sp) {
     const dir = _fv.set(Math.sin(S.heading), 0, Math.cos(S.heading));
     _fside.set(dir.z, 0, -dir.x);
+    const dm = curDmg();
+    if (dm > 0.45 && Math.random() < (dm - 0.35) * 0.9) {   // smoke from under the bonnet
+      _fp.copy(S.pos).addScaledVector(dir, (CARS[carIdx].length || 4.5) * 0.3).setY(S.pos.y + 1.0);
+      smoke.spawn(_fp, new THREE.Vector3((Math.random() - 0.5) * 0.6, 1.2 + Math.random(), (Math.random() - 0.5) * 0.6).addScaledVector(dir, S.speed * 0.6), 0.9 + Math.random() * 0.5);
+    }
     if (skidding) {
       for (let k = 0; k < 2; k++) {
         _fp.copy(S.pos).addScaledVector(dir, -1.3).addScaledVector(_fside, k ? 0.78 : -0.78); _fp.y = S.pos.y + 0.075;
@@ -3803,11 +4023,13 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     const boosting = racing && keys.nitro && S.nitro > 0.01 && S.speed > 2;
     if (boosting) {
       if (!S.boosting) beep(160, 0.4, 0, 0.18);
-      S.nitro = Math.max(0, S.nitro - dt / NITRO_T); S.speed += ACCEL * 1.1 * dt;
+      S.nitro = Math.max(0, S.nitro - dt / NITRO_T); S.speed += ACCEL * 1.1 * dt; S.usedNitro = true;
     } else if (racing) S.nitro = Math.min(1, S.nitro + dt * 0.012 * NITRO_FILL);
     S.boosting = boosting;
+    { const kmh = Math.abs(S.speed) * 3.6; if (kmh > ST.maxKmh + 1) { const was = ST.maxKmh; ST.maxKmh = Math.round(kmh); if (was < 300 && kmh >= 300) goalCheck(); } }
     // longitudinal
-    if (gas) S.speed += ACCEL * Math.max(0, 1 - (Math.max(0, S.speed) / MAX_FWD) ** 2) * dt;
+    const MF = MAX_FWD * (1 - 0.25 * curDmg());   // a battered car loses top speed
+    if (gas) S.speed += ACCEL * (1 - 0.2 * curDmg()) * Math.max(0, 1 - (Math.max(0, S.speed) / MF) ** 2) * dt;
     const wet = weather === 'rain';
     if (brake) S.speed -= (S.speed > 0.5 ? BRAKE * (wet ? 0.6 : 1) : ACCEL * 0.6) * dt;
     if (!gas && !brake) S.speed -= Math.sign(S.speed) * Math.min(Math.abs(S.speed), ROLL * dt);
@@ -3818,7 +4040,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       const cap = MAX_FWD * 0.75;
       if (S.speed > cap) S.speed = Math.max(cap, S.speed - 6 * dt);
     }
-    S.speed = Math.max(-MAX_REV, Math.min(boosting ? MAX_FWD * 1.22 : Math.max(MAX_FWD, S.speed - 9 * dt), S.speed));
+    S.speed = Math.max(-MAX_REV, Math.min(boosting ? MF * 1.22 : Math.max(MF, S.speed - 9 * dt), S.speed));
 
     // steering
     const target = steerIn != null ? steerIn : (keys.left ? 1 : 0) - (keys.right ? 1 : 0);
@@ -3843,6 +4065,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     if (drifting) { S.drift += sp * Math.abs(S.steer) * dt * (keys.hand ? 1.4 : 1); S.driftIdle = 0; S.nitro = Math.min(1, S.nitro + dt * 0.1); }
     else if (S.drift > 0 && (S.driftIdle += dt) > 0.7) {
       const p = Math.round(S.drift); S.drift = 0;
+      ST.driftBest = Math.max(ST.driftBest, p); ST.driftTotal += p; if (p >= 300 || ST.driftTotal % 500 < p) goalCheck();
       if (p >= 15) { addMoney(p / 4); toast(`Drift ${p} puan · +${tl(Math.round(p / 4))}`); beep(660, 0.12, 0, 0.18); }
     }
     S.driftYaw += ((drifting ? S.steer * 0.32 : 0) - S.driftYaw) * Math.min(1, dt * 5);
@@ -3865,7 +4088,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       const t = tans[n2.i], along = Math.atan2(t.x, t.z) * (S.speed >= 0 ? 1 : 1);
       let dA = along - S.heading; dA = Math.atan2(Math.sin(dA), Math.cos(dA));
       if (Math.abs(dA) < Math.PI / 2) S.heading += dA * Math.min(1, dt * 6);
-      if (clock - (S.wallT || -9) > 0.5 && Math.abs(S.speed) > 6) { S.wallT = clock; impact(Math.min(0.5, Math.abs(S.speed) / 80)); S.speed *= 0.93; }
+      if (clock - (S.wallT || -9) > 0.5 && Math.abs(S.speed) > 6) { S.wallT = clock; S.scraped = true; impact(Math.min(0.5, Math.abs(S.speed) / 80), Math.sign(n2.lat), 0.5); S.speed *= 0.93; }
       S.speed -= S.speed * 0.25 * dt;
     }
 
@@ -3988,7 +4211,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       const d = MODS.find(x => x.k === b.dataset.k), lvl = m[d.k] ? (d.max > 1 ? m[d.k] : 1) : 0, cost = d.cost[lvl];
       if (money < cost) return;
       money -= cost; m[d.k] = d.max > 1 ? lvl + 1 : true; saveMoney(); saveMods(); applyMods(c.id);
-      toast(`${d.name} takıldı`); beep(660, 0.12, 0, 0.2); beep(990, 0.15, 0.1, 0.2); renderMods(); refreshGarage();
+      toast(`${d.name} takıldı`); goalCheck(); beep(660, 0.12, 0, 0.2); beep(990, 0.15, 0.1, 0.2); renderMods(); refreshGarage();
     }));
     el.querySelectorAll('button[data-color]').forEach(b => b.addEventListener('click', () => {
       m.neonColor = NEONS[(NEONS.indexOf(m.neonColor || NEONS[0]) + 1) % NEONS.length]; saveMods(); applyMods(c.id); renderMods();
@@ -3999,7 +4222,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     if (!isOwned(c.id)) {
       if (money < PRICES[c.id] || !carCache[c.id]) return;
       money -= PRICES[c.id]; owned.add(c.id); saveMoney();
-      toast(c.name + ' artık senin!'); [523, 784, 1046].forEach((f, k) => beep(f, 0.2, k * 0.12, 0.25));
+      toast(c.name + ' artık senin!'); goalCheck(); [523, 784, 1046].forEach((f, k) => beep(f, 0.2, k * 0.12, 0.25));
       refreshGarage(); return;
     }
     startRace();
@@ -4038,6 +4261,12 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       document.getElementById('gColor').addEventListener('input', e => setPaintHex(parseInt(e.target.value.slice(1), 16)));
       document.getElementById('gStart').addEventListener('click', garageAction);
       document.querySelectorAll('#gChamp button').forEach(b => b.addEventListener('click', () => { champOn = b.dataset.champ === '1'; refreshGarage(); }));
+      $('gRepair').addEventListener('click', () => {
+        const id = CARS[carIdx].id, cost = repairCost(id); if (money < cost) { toastBad('Tamir için paran yetmiyor'); return; }
+        money -= cost; saveMoney(); delete dmgOf[id]; saveDmg(); repairVisual(id);
+        toast('Araba tamir edildi, yepyeni!'); beep(523, 0.12, 0, 0.2); beep(784, 0.18, 0.1, 0.2); refreshGarage();
+      });
+      $('gGoalBtn').addEventListener('click', () => { const open = $('gGoals').hidden; $('gGoals').hidden = !open; $('gGoalBtn').setAttribute('aria-expanded', String(open)); renderGoals(); });
       $('gModBtn').addEventListener('click', () => { const open = $('gMods').hidden; $('gMods').hidden = !open; $('gModBtn').setAttribute('aria-expanded', String(open)); refreshGarage(); });
       document.querySelectorAll('#gMode button').forEach(b => b.addEventListener('click', () => { setMode(b.dataset.mode); enterGarage(); }));
       CUPS.forEach(c => {
@@ -4069,6 +4298,9 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       : S.mode === 'cruise' ? 'Gezintiye başla ' : champOn ? 'Şampiyonaya başla ' : 'Yarışa başla ';
     $('gChamp').hidden = S.mode !== 'race';
     if (!$('gMods').hidden) renderMods();
+    renderGoals();
+    { const id = CARS[carIdx].id, d = dmgOf[id] || 0; $('gRepair').hidden = d < 0.01;
+      if (d >= 0.01) $('gRepair').innerHTML = `🛠️ Tamir et: ${tl(repairCost(id))}<small style="display:block;font-weight:400;font-size:12px;color:var(--hud-dim)">Hasar %${Math.round(d * 100)} · motor gücü %${Math.round(25 * d)} düşük${damageOn ? '' : ' (hasar şu an kapalı)'}</small>`; }
     document.querySelectorAll('#gChamp button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.champ === '1') === champOn)));
     document.querySelectorAll('#gMode button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === S.mode)));
     $('gTrack').hidden = S.mode !== 'race' || champOn;
