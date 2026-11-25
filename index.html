@@ -105,6 +105,9 @@
   #gMods button { font-family: var(--font-body); font-size: 13px; font-weight: 700; padding: 7px 10px; border-radius: 7px; border: 0; background: var(--accent); color: #1a1405; cursor: pointer; min-width: 92px; }
   #gMods button:disabled { background: rgba(255,255,255,0.12); color: var(--hud-dim); cursor: default; }
   #gMods .stat { font-size: 12px; color: var(--hud-dim); }
+  #replayTag { position: fixed; top: calc(14px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); padding: 8px 18px; border-radius: 12px; background: rgba(10,12,16,0.78); border: 2px solid #ff3b3b; font-family: var(--font-display); font-weight: 700; font-size: 20px; letter-spacing: .08em; z-index: 7; cursor: pointer; }
+  #replayTag small { font-family: var(--font-body); font-size: 12px; font-weight: 400; letter-spacing: 0; color: var(--hud-dim); margin-left: 8px; }
+  body.replay .hud, body.replay #drift, body.replay #offroad, body.replay #lights, body.replay #chaseHud, body.replay #minimap, body.replay #nitroBar, body.replay #touch, body.replay #steerZone { visibility: hidden; }
   #chaseHud { position: fixed; top: calc(12px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); display: grid; justify-items: center; gap: 4px; padding: 8px 16px; border-radius: 12px; background: rgba(10,12,16,0.78); border: 2px solid #2050ff; z-index: 3; pointer-events: none; font-family: var(--font-display); font-weight: 700; font-size: 22px; }
   #chaseHud .cbar { width: 180px; height: 8px; border-radius: 4px; background: rgba(255,255,255,0.15); overflow: hidden; }
   #chaseHud .cbar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #ffcc33, #ff3020); }
@@ -220,6 +223,7 @@
   <div id="nitroBar" title="Nitro (Shift)"><span id="nitroFill"></span></div>
 </div>
 <div id="drift"></div>
+<div id="replayTag" hidden>🎬 TEKRAR <small>Enter ya da dokun: çık</small></div>
 <div id="chaseHud" hidden><span id="chaseTime">🚓 0:00 / 1:30</span><span class="cbar"><i id="chaseFill"></i></span><small id="chaseInfo">Polis peşinde! Yavaşlarsan yakalanırsın.</small></div>
 <div id="lights" hidden><i></i><i></i><i></i><i></i><i></i></div>
 <div id="vig"></div><canvas id="fx"></canvas>
@@ -292,6 +296,7 @@
     <h2 id="overTitle">EHLİYETİNE EL KONULDU</h2>
     <p id="overText" class="overtext"></p>
     <button id="overRestart" class="primary" type="button">Yeniden başla <kbd>Enter</kbd></button>
+    <button id="overReplay" type="button" hidden>🎬 Tekrarı izle</button>
     <button id="overGarage" type="button">Garaja dön</button>
   </div>
 </div>
@@ -3293,6 +3298,55 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     $('gGoals').innerHTML = GOALS.map(g => { const d = goalsDone.includes(g.id);
       return `<div class="grow${d ? ' done' : ''}"><span>${d ? g.icon : '🔒'}</span><div>${g.name}<small>${g.desc}</small></div><b>${d ? '✓ ' : ''}${tl(g.reward)}</b></div>`; }).join('');
   }
+  // ---------- Replay: the race is recorded 30 times a second and played back with TV-style cameras ----------
+  let REC = [], RP = null, recNext = 0;
+  function recFrame() {
+    if (clock < recNext) return; recNext = clock + 1 / 30;
+    REC.push({ t: clock, x: S.pos.x, y: S.pos.y, z: S.pos.z, h: S.heading + S.driftYaw, p: S.pitch || 0, st: S.steer, sp: S.speed, b: S.boosting ? 1 : 0, r: rivals.map(r => [r.prog, r.off]) });
+    if (REC.length > 30 * 60 * 8) REC.shift();   // keep the last 8 minutes at most
+  }
+  function startReplay() {
+    if (REC.length < 60) return;
+    $('over').hidden = true; $('replayTag').hidden = false; document.body.classList.add('replay');
+    RP = { t: REC[0].t, i: 0, shot: -1, anchor: new THREE.Vector3(), side: 1 };
+    S.phase = 'replay'; sirenStop();
+  }
+  function endReplay() {
+    RP = null; S.phase = 'over'; $('replayTag').hidden = true; document.body.classList.remove('replay');
+    $('over').hidden = false; flames.visible = false;
+  }
+  const _rq = new THREE.Vector3(), _rl = new THREE.Vector3();
+  function replayStep(dt) {
+    RP.t += dt;
+    while (RP.i < REC.length - 2 && REC[RP.i + 1].t <= RP.t) RP.i++;
+    const a = REC[RP.i], b = REC[Math.min(REC.length - 1, RP.i + 1)], u = Math.max(0, Math.min(1, (RP.t - a.t) / ((b.t - a.t) || 1)));
+    const L = (x, y) => x + (y - x) * u;
+    let dh = b.h - a.h; dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+    S.pos.set(L(a.x, b.x), L(a.y, b.y), L(a.z, b.z)); S.heading = a.h + dh * u; S.speed = L(a.sp, b.sp); S.steer = L(a.st, b.st);
+    car.position.copy(S.pos); car.rotation.order = 'YXZ'; car.rotation.y = S.heading; car.rotation.x = L(a.p, b.p);
+    body.rotation.z = -S.steer * Math.min(1, Math.abs(S.speed) / 30) * 0.05;
+    for (const w of wheels) { w.spin.rotation.x += (w.sign || 1) * S.speed * dt / 0.34; if (w.front) w.pivot.rotation.y = S.steer * 0.45; }
+    flames.visible = !!a.b;
+    rivals.forEach((r, k) => { if (a.r[k]) { r.prog = L(a.r[k][0], b.r[k][0]); r.off = L(a.r[k][1], b.r[k][1]); } });
+    placeRivals();
+    // camera: a new shot every 4 seconds
+    const shot = Math.floor((RP.t - REC[0].t) / 4) % 4, dir = _rl.set(Math.sin(S.heading), 0, Math.cos(S.heading));
+    if (shot !== RP.shot) {
+      RP.shot = shot; RP.side = -RP.side;
+      if (shot === 0 && S.mode === 'race') { const n = nearest(S.pos, -1), i = (n.i + Math.round(60 * Math.max(8, S.speed) / 40)) % N; RP.anchor.copy(pts[i]).addScaledVector(nors[i], RP.side * (CURB + 5)).setY(pts[i].y + 2.2); }
+      else if (shot === 0) RP.anchor.copy(S.pos).addScaledVector(dir, S.speed * 2.5 + 10).add(_rq.set(dir.z * 6, 2.2, -dir.x * 6));
+    }
+    if (shot === 0) { camera.position.copy(RP.anchor); camera.fov = 38; }   // trackside camera panning with the car
+    else if (shot === 1) { camera.position.copy(S.pos).addScaledVector(dir, -4.6).setY(S.pos.y + 0.9); camera.fov = 62; }   // low chase
+    else if (shot === 2) { const k = RP.t * 0.25; camera.position.copy(S.pos).add(_rq.set(Math.sin(k) * 26, 17, Math.cos(k) * 26)); camera.fov = 45; }   // helicopter
+    else { camera.position.copy(S.pos).addScaledVector(dir, 6.5).add(_rq.set(dir.z * RP.side * 1.6, 1.1, -dir.x * RP.side * 1.6)); camera.fov = 50; }   // in front, looking back
+    camera.lookAt(S.pos.x, S.pos.y + 0.8, S.pos.z);
+    camera.updateProjectionMatrix(); camPos.copy(camera.position);
+    sun.position.copy(S.pos).addScaledVector(sunDir, 150); sun.target.position.copy(S.pos);
+    if (A.ctx) audioUpdate(false, S.speed > 1, true);
+    drawGauge();
+    if (RP.t > REC[REC.length - 1].t + 0.5) endReplay();
+  }
   const CHASE_T = 90;
   function chaseStep(dt) {
     const c = S.chase;
@@ -3335,7 +3389,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     $('overText').innerHTML = `<div style="margin-bottom:8px">${win ? 'Polisler 90 saniye boyunca seni yakalayamadı.' : 'Polisler seni sıkıştırdı.'} Kaçış süren: <b>${tt}</b> · En iyi: <b>${ST.escapeBest} sn</b></div>` +
       `<div style="color:#7ee08a;font-weight:700">+${tl(earn)} kazandın · Paran: ${tl(money)}</div>`;
     $('overRestart').firstChild.textContent = 'Tekrar dene ';
-    $('over').hidden = false;
+    $('over').hidden = false; $('overReplay').hidden = REC.length < 60;
     if (win) [523, 659, 784, 1046].forEach((f, k) => beep(f, 0.25, k * 0.14, 0.25)); else [400, 300, 200].forEach((f, k) => beep(f, 0.3, k * 0.2, 0.25));
   }
   function finishRace() {
@@ -3383,7 +3437,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       '<small>Tur sürelerin: ' + S.laps.map(fmt).join(' · ') + '</small><br>' +
       `<b>${newRec ? '⭐ Yeni rekor yarış: ' + fmt(now) : 'Rekor yarış: ' + fmt(bestRace)}</b> · En iyi tur: ${fmt(S.best)}` +
       champHtml + `<div style="margin-top:6px;color:#7ee08a;font-weight:700">+${tl(earn)} kazandın · Paran: ${tl(money)}</div>`;
-    $('over').hidden = false;
+    $('over').hidden = false; $('overReplay').hidden = REC.length < 60;
     if (rank === 1) [523, 659, 784, 1046].forEach((f, k) => beep(f, 0.25, k * 0.14, 0.25)); else lapChime(false);
   }
   function restartCruise() {
@@ -3523,7 +3577,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     }
     const i = N - 6;
     S.pos.copy(pts[i]); S.heading = Math.atan2(tans[i].x, tans[i].z);
-    S.usedNitro = false; S.scraped = false;
+    S.usedNitro = false; S.scraped = false; REC = []; recNext = 0; $('overReplay').hidden = true;
     S.chase = S.chaseArmed ? { t: 0, caught: 0, done: false } : null; $('chaseHud').hidden = !S.chase;
     S.speed = 0; S.steer = 0; S.idx = i; S.idxStart = i; S.lap = 1; S.laps = []; $('over').hidden = true; S.half = false; S.last = null;
     resetRivals();
@@ -3745,6 +3799,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     initAudio();
     if (!$('title').hidden) { if (e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space') { closeTitle(); e.preventDefault(); } return; }
     if (S.phase === 'garage' && (e.code === 'Enter' || e.code === 'NumpadEnter')) { startRace(); e.preventDefault(); return; }
+    if (S.phase === 'replay' && (e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Escape' || e.code === 'Space')) { endReplay(); e.preventDefault(); return; }
     if (S.phase === 'over' && (e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'KeyR')) { restartCruise(); e.preventDefault(); return; }
     if (S.phase === 'garage' && (e.code === 'Escape' || e.code === 'KeyP')) return;
     if (e.code === 'Escape' || e.code === 'KeyP') { setPaused(!paused); e.preventDefault(); return; }
@@ -3775,6 +3830,8 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   document.getElementById('mNight').addEventListener('click', toggleNight);
   document.getElementById('mWeather').addEventListener('click', cycleWeather);
   document.getElementById('overRestart').addEventListener('click', restartCruise);
+  document.getElementById('overReplay').addEventListener('click', startReplay);
+  document.getElementById('replayTag').addEventListener('click', () => { if (RP) endReplay(); });
   document.getElementById('overGarage').addEventListener('click', () => { $('over').hidden = true; enterGarage(); });
   document.getElementById('mSound').addEventListener('click', () => { initAudio(); setMute(!A.muted); refreshMenu(); if (paused && A.ctx) A.ctx.suspend(); });
   // ---------- Touch steering: drag a wheel, tilt the phone, or the old arrow buttons ----------
@@ -4056,6 +4113,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   function step(dt) {
     dayStep(dt);
     if (S.phase === 'garage') { garageStep(dt); return; }
+    if (S.phase === 'replay') { clock += dt; replayStep(dt); return; }
     clock += dt;
     if (S.phase === 'count') {
       S.countT -= dt;
@@ -4198,6 +4256,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     car.rotation.y = S.heading + S.driftYaw;
     car.rotation.x += ((S.pitch || 0) - car.rotation.x) * Math.min(1, dt * 10);
     flames.visible = boosting;
+    if (!cruise && S.phase === 'race') recFrame();
     if (boosting) for (const f of flames.children) f.scale.z = (f.userData.z || 1) * (0.7 + Math.random() * 0.6);
     S.fovK += ((boosting ? 12 : 0) - S.fovK) * Math.min(1, dt * 4);
     body.rotation.z = -S.steer * Math.min(1, sp / 30) * 0.05;
