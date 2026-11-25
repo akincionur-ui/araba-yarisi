@@ -3476,7 +3476,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   // ---------- Input ----------
   const keys = {};
   const map = { ArrowUp: 'gas', KeyW: 'gas', ArrowDown: 'brake', KeyS: 'brake', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', Space: 'hand', ShiftLeft: 'nitro', ShiftRight: 'nitro', KeyX: 'nitro' };
-  const CAMS = ['Takip', 'Kokpit', 'Yan'];
+  const CAMS = ['Takip', 'Yakın takip', 'Kokpit', 'Yan'];
   let paused = false;
   function setPaused(p) {
     paused = p;
@@ -3513,7 +3513,8 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   }
   function toggleQuality() { quality = quality === 'low' ? 'high' : 'low'; try { localStorage.setItem('pistQuality', quality); } catch (e) {} applyQuality(); }
   applyQuality();
-  function cycleCam() { S.camMode = (S.camMode + 1) % CAMS.length; refreshMenu(); if (!paused) toast('Kamera: ' + CAMS[S.camMode]); }
+  try { const c = +localStorage.getItem('pistCam'); if (c > 0 && c < CAMS.length) S.camMode = c; } catch (e) {}
+  function cycleCam() { S.camMode = (S.camMode + 1) % CAMS.length; try { localStorage.setItem('pistCam', S.camMode); } catch (e) {} refreshMenu(); if (!paused) toast('Kamera: ' + CAMS[S.camMode]); }
   addEventListener('keydown', e => {
     initAudio();
     if (!$('title').hidden) { if (e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space') { closeTitle(); e.preventDefault(); } return; }
@@ -3920,14 +3921,15 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
 
     // camera
     const dir = new THREE.Vector3(Math.sin(S.heading), 0, Math.cos(S.heading));
-    if (S.camMode === 0) {
-      const back = 11 + sp * 0.06;
-      const want = S.pos.clone().addScaledVector(dir, -back).setY(S.pos.y + 4.2 + sp * 0.02);
+    if (S.camMode <= 1) {
+      const near = S.camMode === 1;   // close chase: low and right behind the car
+      const back = near ? 5.0 + sp * 0.025 : 11 + sp * 0.06;
+      const want = S.pos.clone().addScaledVector(dir, -back).setY(S.pos.y + (near ? 1.75 + sp * 0.006 : 4.2 + sp * 0.02));
       camPos.lerp(want, 1 - Math.exp(-dt * 6));
       camera.position.copy(camPos);
-      camera.lookAt(S.pos.clone().addScaledVector(dir, 5).setY(S.pos.y + 1.4));
-      camera.fov = 62 + sp * 0.18 + S.fovK;
-    } else if (S.camMode === 1) {
+      camera.lookAt(S.pos.clone().addScaledVector(dir, near ? 6 : 5).setY(S.pos.y + (near ? 1.1 : 1.4)));
+      camera.fov = (near ? 52 : 62) + sp * (near ? 0.14 : 0.18) + S.fovK;
+    } else if (S.camMode === 2) {
       camera.position.copy(S.pos).addScaledVector(dir, 0.3).setY(S.pos.y + 1.6);
       camera.lookAt(S.pos.clone().addScaledVector(dir, 20).setY(S.pos.y + 1.3 - (S.pitch || 0) * 20));
       camera.fov = 70 + sp * 0.12 + S.fovK;
