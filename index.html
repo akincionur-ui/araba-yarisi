@@ -105,6 +105,11 @@
   #gMods button { font-family: var(--font-body); font-size: 13px; font-weight: 700; padding: 7px 10px; border-radius: 7px; border: 0; background: var(--accent); color: #1a1405; cursor: pointer; min-width: 92px; }
   #gMods button:disabled { background: rgba(255,255,255,0.12); color: var(--hud-dim); cursor: default; }
   #gMods .stat { font-size: 12px; color: var(--hud-dim); }
+  #chaseHud { position: fixed; top: calc(12px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); display: grid; justify-items: center; gap: 4px; padding: 8px 16px; border-radius: 12px; background: rgba(10,12,16,0.78); border: 2px solid #2050ff; z-index: 3; pointer-events: none; font-family: var(--font-display); font-weight: 700; font-size: 22px; }
+  #chaseHud .cbar { width: 180px; height: 8px; border-radius: 4px; background: rgba(255,255,255,0.15); overflow: hidden; }
+  #chaseHud .cbar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #ffcc33, #ff3020); }
+  #chaseHud small { font-family: var(--font-body); font-size: 12px; font-weight: 400; color: var(--hud-dim); }
+  body.intro #chaseHud { display: none !important; }
   #drift { position: fixed; top: calc(70px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); font-family: var(--font-display); font-weight: 700; font-size: 30px; color: #ffcc33; text-shadow: 0 3px 14px rgba(0,0,0,0.6); pointer-events: none; z-index: 3; }
   #offroad { color: var(--accent); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; min-height: 1.2em; }
   #center { inset: 0; display: grid; place-items: center; }
@@ -192,7 +197,7 @@
 
 <div id="times" class="hud panel" lang="tr">
   <div class="row"><span class="label">Tur</span><span class="lapnum" id="lap">1</span></div>
-  <div class="row"><span class="label">Sıra</span><span class="val" id="rank">1 / 4</span></div>
+  <div class="row"><span class="label" id="rankLabel">Sıra</span><span class="val" id="rank">1 / 4</span></div>
   <div class="row"><span class="label">Şu an</span><span class="val" id="cur">0:00.000</span></div>
   <div class="row"><span class="label">Son tur</span><span class="val" id="last">–</span></div>
   <div class="row"><span class="label">En iyi tur</span><span class="val" id="best">–</span></div>
@@ -215,6 +220,7 @@
   <div id="nitroBar" title="Nitro (Shift)"><span id="nitroFill"></span></div>
 </div>
 <div id="drift"></div>
+<div id="chaseHud" hidden><span id="chaseTime">🚓 0:00 / 1:30</span><span class="cbar"><i id="chaseFill"></i></span><small id="chaseInfo">Polis peşinde! Yavaşlarsan yakalanırsın.</small></div>
 <div id="lights" hidden><i></i><i></i><i></i><i></i><i></i></div>
 <div id="vig"></div><canvas id="fx"></canvas>
 <div id="title">
@@ -267,7 +273,7 @@
     <button id="gRepair" type="button" hidden></button>
     <button id="gGoalBtn" type="button" aria-expanded="false">🎯 Görevler<small id="gGoalSub" style="display:block;font-weight:400;font-size:12px;color:var(--hud-dim)"></small></button>
     <div id="gGoals" hidden></div>
-    <div id="gChamp" class="gmode" role="group" aria-label="Yarış türü"><button type="button" data-champ="0">Tek yarış<small>Seçtiğin pistte 3 tur</small></button><button type="button" data-champ="1">🏆 Şampiyona<small>4 kupa, her biri 4 pist, puan tablosu</small></button></div>
+    <div id="gChamp" class="gmode" role="group" aria-label="Yarış türü"><button type="button" data-champ="0">Tek yarış<small>Seçtiğin pistte 3 tur</small></button><button type="button" data-champ="1">🏆 Şampiyona<small>4 kupa, her biri 4 pist, puan tablosu</small></button><button type="button" data-champ="2">🚓 Polis kovalamacası<small>90 saniye yakalanmadan kaç</small></button></div>
     <div id="gCups" class="gmode" role="group" aria-label="Kupa"></div>
     <div id="gTrack" class="gmode" role="group" aria-label="Pist"></div>
     <button id="gStart" class="gstart" type="button">Yarışa başla <kbd>Enter</kbd></button>
@@ -3227,7 +3233,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   }
   const RACE_LAPS = 3;
   let bestRace = null;
-  let champOn = false, champ = null;   // championship: the 4 circuits in a row, points per finish
+  let champOn = false, champ = null, chaseOn = false;   // championship: the 4 circuits in a row, points per finish
   const CH_PTS = [10, 7, 5, 3], PRIZE = [1500, 900, 600, 300];
   // several cups of four circuits each; harder cups have quicker rivals and bigger prizes
   const CUPS = [
@@ -3286,6 +3292,51 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     if ($('gGoals').hidden) return;
     $('gGoals').innerHTML = GOALS.map(g => { const d = goalsDone.includes(g.id);
       return `<div class="grow${d ? ' done' : ''}"><span>${d ? g.icon : '🔒'}</span><div>${g.name}<small>${g.desc}</small></div><b>${d ? '✓ ' : ''}${tl(g.reward)}</b></div>`; }).join('');
+  }
+  const CHASE_T = 90;
+  function chaseStep(dt) {
+    const c = S.chase;
+    const on = c && !c.done && S.phase === 'race';
+    if (A.ctx) {   // siren, louder as they get close
+      if (on && !A.siren) {
+        const ctx = A.ctx, o = ctx.createOscillator(), lfo = ctx.createOscillator(), lg = ctx.createGain(), g = ctx.createGain(), f = ctx.createBiquadFilter();
+        o.type = 'square'; o.frequency.value = 760; lfo.type = 'square'; lfo.frequency.value = 1.5; lg.gain.value = 150;
+        f.type = 'lowpass'; f.frequency.value = 1600; g.gain.value = 0;
+        lfo.connect(lg).connect(o.frequency); o.connect(f).connect(g).connect(A.master); o.start(); lfo.start();
+        A.siren = { o, lfo, g };
+      }
+      if (A.siren) {
+        let near = 999; if (on) for (const r of rivals) near = Math.min(near, r.pos.distanceTo(S.pos));
+        A.siren.g.gain.setTargetAtTime(on ? Math.max(0.015, 0.09 - near / 2500) : 0, A.ctx.currentTime, 0.1);
+        if (!on && !c) { const sr = A.siren; A.siren = null; sr.o.stop(A.ctx.currentTime + 0.3); sr.lfo.stop(A.ctx.currentTime + 0.3); }
+      }
+    }
+    if (!c) return;
+    const blink = Math.floor(clock * 5) % 2;
+    polRed.color.setHex(blink ? 0xff2020 : 0x300000); polBlue.color.setHex(blink ? 0x000a30 : 0x2050ff);
+    if (!on) return;
+    c.t += dt;
+    let near = Infinity; for (const r of rivals) near = Math.min(near, r.pos.distanceTo(S.pos));
+    if (near < 9 && Math.abs(S.speed) < 10) c.caught += dt; else c.caught = Math.max(0, c.caught - dt * 0.5);
+    const left = Math.max(0, CHASE_T - c.t), mm = Math.floor(left / 60), ss = Math.floor(left % 60);
+    $('chaseTime').textContent = `🚓 ${mm}:${String(ss).padStart(2, '0')}`;
+    $('chaseFill').style.width = Math.min(100, c.caught / 2.2 * 100) + '%';
+    $('chaseInfo').textContent = c.caught > 0.3 ? 'YAKALANIYORSUN! Gaza bas!' : near < 30 ? 'Polis dibinde!' : 'Kaçmaya devam et';
+    if (c.caught > 2.2) endChase(false); else if (c.t >= CHASE_T) endChase(true);
+  }
+  function sirenStop() { if (A.siren && A.ctx) { const sr = A.siren; A.siren = null; sr.g.gain.setTargetAtTime(0, A.ctx.currentTime, 0.05); sr.o.stop(A.ctx.currentTime + 0.3); sr.lfo.stop(A.ctx.currentTime + 0.3); } }
+  function endChase(win) {
+    const c = S.chase; c.done = true; S.phase = 'over'; sirenStop();
+    ST.escapeBest = Math.max(ST.escapeBest, Math.round(c.t));
+    const earn = win ? 4000 + Math.round(Math.abs(S.speed) * 10) : Math.round(c.t * 25);
+    addMoney(earn); goalCheck();
+    $('overTitle').textContent = win ? '🚓 KAÇTIN! POLİSİ ATLATTIN' : '🚨 YAKALANDIN!';
+    const tt = `${Math.floor(c.t / 60)}:${String(Math.floor(c.t % 60)).padStart(2, '0')}`;
+    $('overText').innerHTML = `<div style="margin-bottom:8px">${win ? 'Polisler 90 saniye boyunca seni yakalayamadı.' : 'Polisler seni sıkıştırdı.'} Kaçış süren: <b>${tt}</b> · En iyi: <b>${ST.escapeBest} sn</b></div>` +
+      `<div style="color:#7ee08a;font-weight:700">+${tl(earn)} kazandın · Paran: ${tl(money)}</div>`;
+    $('overRestart').firstChild.textContent = 'Tekrar dene ';
+    $('over').hidden = false;
+    if (win) [523, 659, 784, 1046].forEach((f, k) => beep(f, 0.25, k * 0.14, 0.25)); else [400, 300, 200].forEach((f, k) => beep(f, 0.3, k * 0.2, 0.25));
   }
   function finishRace() {
     const now = clock - S.raceT0;
@@ -3361,14 +3412,16 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     for (let rep = 0; rep < 2; rep++) for (let k = 2 * N - 1; k >= 0; k--) { const i = k % N; vAllow[i] = Math.min(vC[i], Math.sqrt(vAllow[(i + 1) % N] ** 2 + 2 * 20 * SEG)); }
   }
   computeAI();
+  const polRed = new THREE.MeshBasicMaterial({ color: 0x400000, toneMapped: false }), polBlue = new THREE.MeshBasicMaterial({ color: 0x000a40, toneMapped: false });
   const RIVAL_SKILL = [0.92, 0.97, 1.02], RIVAL_LANE = [4.5, -4.5, 4.5], RIVAL_START = [0, -6, -12];
   const rivals = RIVAL_SKILL.map((skill, k) => ({ skill, prog: 0, off: 0, base: RIVAL_LANE[k], offT: 0, v: 0, obj: new THREE.Group(), pos: new THREE.Vector3(), dir: new THREE.Vector3(), id: null }));
   rivals.forEach(r => rivalsG.add(r.obj));
   const rivalIds = () => ['nitro', 'corsa', 'troc', 'ferrari'].filter(id => id !== CARS[carIdx].id).slice(0, 3);
   function resetRivals() {
-    const ids = rivalIds();
+    const ids = S.chaseArmed ? ['police', 'police', 'police'] : rivalIds();
+    if (S.chaseArmed) ensureModel(CARS.findIndex(c => c.id === 'nitro')).catch(() => {});
     rivals.forEach((r, k) => {
-      r.prog = RIVAL_START[k]; r.off = r.offT = r.base; r.v = 0; r.finish = null;
+      r.prog = S.chaseArmed ? [-45, -58, -72][k] : RIVAL_START[k]; r.off = r.offT = r.base; r.v = 0; r.finish = null;
       if (r.id !== ids[k]) { r.id = ids[k]; r.obj.clear(); }
       const ci = CARS.findIndex(c => c.id === r.id); if (ci >= 0) ensureModel(ci).catch(() => {});
     });
@@ -3380,7 +3433,8 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       r.pos.copy(pts[i0]).lerp(pts[i1], u).addScaledVector(nors[i0], r.off);
       r.dir.copy(tans[i0]).lerp(tans[i1], u).normalize();
       r.obj.position.copy(r.pos); r.obj.rotation.order = 'YXZ'; r.obj.rotation.y = Math.atan2(r.dir.x, r.dir.z); r.obj.rotation.x = -Math.asin(Math.max(-1, Math.min(1, r.dir.y)));
-      if (!r.obj.children.length && carCache[r.id]) {
+      if (r.id === 'police') { if (!r.obj.children.length && ['troc', 'nitro', 'van'].some(i => carCache[i])) dressPolice({ car: r.obj, red: polRed, blue: polBlue }); }
+      else if (!r.obj.children.length && carCache[r.id]) {
         const m = carCache[r.id].root.clone(true), pm = paint.clone(); pm.color.setHex(PAINTS[(Math.random() * PAINTS.length) | 0].c);
         m.traverse(o => { if (o.isMesh && o.material === paint) o.material = pm; }); r.obj.add(m);
       }
@@ -3397,7 +3451,13 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       let target = Math.min(sk * BASE_FWD, vAllow[idx] * sk);
       // the player just ahead in our line: go round, or wait
       const gap = (S.prog - r.prog) * SEG;
-      if (gap > 0 && gap < 16 && Math.abs(playerLat - r.off) < 2.8) {
+      if (S.chase) {   // police: close in hard, corner a touch better than you, line up behind you to ram
+        const agg = 1 + Math.min(0.12, S.chase.t / 800);
+        const ps = Math.abs(S.speed);
+        target = gap > 0 ? Math.min(vAllow[idx] * 1.06 * agg, BASE_FWD * (S.chase.t < 6 ? 0.85 : gap > 150 ? 1.15 : gap > 50 ? 1.07 : 1.02) * agg)
+          : ps < 10 && gap > -40 ? -7 : Math.max(0, ps * 0.75);   // ahead of you: block the road, back up to a car that has stopped
+        r.offT = gap > 0 && gap < 70 ? Math.max(-6, Math.min(6, playerLat)) : r.base;
+      } else if (gap > 0 && gap < 16 && Math.abs(playerLat - r.off) < 2.8) {
         r.offT = playerLat > 0 ? Math.max(-6, playerLat - 4.5) : Math.min(6, playerLat + 4.5);
         if (gap < 7) target = Math.min(target, Math.abs(S.speed) * 0.95);
       } else if (gap < -10 || gap > 30) r.offT = r.base;
@@ -3418,7 +3478,8 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
         else { S.pos.x += r.dir.z * pl * Math.sign(lat || 1); S.pos.z -= r.dir.x * pl * Math.sign(lat || 1); }
         // one knock per contact, not every frame: the car behind drops to the speed of the one in front, side swipes cost a little
         if (clock - (r.hitT || -9) > 0.6) {
-          r.hitT = clock; if (Math.abs(S.speed - r.v) > 4) impact(0.4);
+          r.hitT = clock; if (Math.abs(S.speed - r.v) > 4) impact(0.4, 0, along < 0 ? 1 : -1);
+          if (S.chase) S.speed *= 0.82;   // a police ram costs you speed
           if (pa < pl) {
             if (along < 0) S.speed = Math.min(S.speed, r.v * 0.97); else r.v = Math.min(r.v, S.speed * 0.97);
           } else { S.speed *= 0.95; r.v *= 0.95; }
@@ -3426,9 +3487,10 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       }
     }
     // rivals crossing the finish
-    if (S.phase === 'race') for (const r of rivals) if (r.finish == null && r.prog >= 6 + RACE_LAPS * N) r.finish = clock - S.raceT0;
+    if (S.phase === 'race' && !S.chase) for (const r of rivals) if (r.finish == null && r.prog >= 6 + RACE_LAPS * N) r.finish = clock - S.raceT0;
     const rank = 1 + rivals.filter(r => r.prog > S.prog).length;
-    $('rank').textContent = rank + ' / ' + (rivals.length + 1);
+    $('rankLabel').textContent = S.chase ? 'Polis' : 'Sıra';
+    $('rank').textContent = S.chase ? Math.max(0, Math.round(Math.min(...rivals.map(r => (S.prog - r.prog) * SEG)))) + ' m' : rank + ' / ' + (rivals.length + 1);
   }
   // ---------- State ----------
   const S = {
@@ -3453,6 +3515,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     if (S.mode === 'cruise') {
       { const k = 6, q = hwPts[k], t = hwTan[k]; S.pos.set(q.x, q.y, q.z).addScaledVector(hwNor[k], -3.6); S.heading = Math.atan2(t.x, t.z); hwIdx = -1; }
       S.speed = 0; S.steer = 0; S.phase = 'free'; S.countT = -1; S.lastShown = null;
+      S.chase = null; $('chaseHud').hidden = true; sirenStop();
       resetRules(); $('over').hidden = true; clearEmergencies(); emgTimer = 50 + Math.random() * 30;
       $('count').textContent = '';
       camPos.copy(S.pos).add(new THREE.Vector3(-Math.sin(S.heading) * 12, 5, -Math.cos(S.heading) * 12));
@@ -3461,6 +3524,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     const i = N - 6;
     S.pos.copy(pts[i]); S.heading = Math.atan2(tans[i].x, tans[i].z);
     S.usedNitro = false; S.scraped = false;
+    S.chase = S.chaseArmed ? { t: 0, caught: 0, done: false } : null; $('chaseHud').hidden = !S.chase;
     S.speed = 0; S.steer = 0; S.idx = i; S.idxStart = i; S.lap = 1; S.laps = []; $('over').hidden = true; S.half = false; S.last = null;
     resetRivals();
     S.phase = 'count'; S.countT = 3.5; S.lastShown = null;
@@ -4095,7 +4159,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     // laps
     const prev = S.idx; S.idx = n2.i;
     { let dI = S.idx - prev; if (dI > N / 2) dI -= N; if (dI < -N / 2) dI += N; S.prog += dI; }
-    rivalsStep(dt, n2.lat);
+    rivalsStep(dt, n2.lat); chaseStep(dt);
     if (S.idx > N * 0.4 && S.idx < N * 0.6) S.half = true;
     if (racing && prev > N * 0.9 && S.idx < N * 0.1) {
       if (S.half) {
@@ -4105,7 +4169,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
         const isBest = S.best == null || t < S.best;
         if (isBest) { S.best = t; msg += '  En iyi!'; try { localStorage.setItem(recKey('pistBest'), String(t)); } catch (e) {} }
         S.laps.push(t);
-        if (S.lap >= RACE_LAPS) { finishRace(); }
+        if (S.lap >= RACE_LAPS && !S.chase) { finishRace(); }
         else { toast(msg); lapChime(isBest); S.lap++; }
       }
       S.lapStart = clock; S.half = false;
@@ -4113,7 +4177,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     }
 
     // HUD
-    $('lap').textContent = S.lap + ' / ' + RACE_LAPS;
+    $('lap').textContent = S.chase ? '🚓 ' + S.lap : S.lap + ' / ' + RACE_LAPS;
     $('cur').textContent = fmt(racing ? clock - S.lapStart : 0);
     $('last').textContent = fmt(S.last);
     $('best').textContent = fmt(S.best);
@@ -4190,7 +4254,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
 
   // ---------- Garage ----------
   function enterGarage() {
-    champ = null; S.champNext = false;
+    champ = null; S.champNext = false; S.chaseArmed = false; sirenStop();
     reset(); S.phase = 'garage'; S.orbit = 0.6;
     $('count').textContent = '';
     $('garage').hidden = false;
@@ -4230,6 +4294,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
   function startRace() {
     if (!carCache[CARS[carIdx].id] || !isOwned(CARS[carIdx].id)) return;
     if (S.mode === 'race' && champOn) { champ = { cup, round: 0, pts: [0, 0, 0, 0] }; selectTrack(cupTrack(0).id); }
+    S.chaseArmed = S.mode === 'race' && chaseOn && !champOn;
     $('garage').hidden = true;
     initAudio();
     reset();
@@ -4260,7 +4325,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
       });
       document.getElementById('gColor').addEventListener('input', e => setPaintHex(parseInt(e.target.value.slice(1), 16)));
       document.getElementById('gStart').addEventListener('click', garageAction);
-      document.querySelectorAll('#gChamp button').forEach(b => b.addEventListener('click', () => { champOn = b.dataset.champ === '1'; refreshGarage(); }));
+      document.querySelectorAll('#gChamp button').forEach(b => b.addEventListener('click', () => { champOn = b.dataset.champ === '1'; chaseOn = b.dataset.champ === '2'; refreshGarage(); }));
       $('gRepair').addEventListener('click', () => {
         const id = CARS[carIdx].id, cost = repairCost(id); if (money < cost) { toastBad('Tamir için paran yetmiyor'); return; }
         money -= cost; saveMoney(); delete dmgOf[id]; saveDmg(); repairVisual(id);
@@ -4295,13 +4360,13 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
     const cid = CARS[carIdx].id, mine = isOwned(cid), price = PRICES[cid] || 0;
     st.disabled = !ok || (!mine && money < price);
     st.firstChild.textContent = !ok ? 'Araba yükleniyor… ' : !mine ? (money >= price ? `Satın al: ${tl(price)} ` : `Paran yetmiyor: ${tl(price)} `)
-      : S.mode === 'cruise' ? 'Gezintiye başla ' : champOn ? 'Şampiyonaya başla ' : 'Yarışa başla ';
+      : S.mode === 'cruise' ? 'Gezintiye başla ' : chaseOn ? 'Kovalamacayı başlat ' : champOn ? 'Şampiyonaya başla ' : 'Yarışa başla ';
     $('gChamp').hidden = S.mode !== 'race';
     if (!$('gMods').hidden) renderMods();
     renderGoals();
     { const id = CARS[carIdx].id, d = dmgOf[id] || 0; $('gRepair').hidden = d < 0.01;
       if (d >= 0.01) $('gRepair').innerHTML = `🛠️ Tamir et: ${tl(repairCost(id))}<small style="display:block;font-weight:400;font-size:12px;color:var(--hud-dim)">Hasar %${Math.round(d * 100)} · motor gücü %${Math.round(25 * d)} düşük${damageOn ? '' : ' (hasar şu an kapalı)'}</small>`; }
-    document.querySelectorAll('#gChamp button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.champ === '1') === champOn)));
+    document.querySelectorAll('#gChamp button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.champ === (chaseOn ? '2' : champOn ? '1' : '0'))));
     document.querySelectorAll('#gMode button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === S.mode)));
     $('gTrack').hidden = S.mode !== 'race' || champOn;
     $('gCups').hidden = S.mode !== 'race' || !champOn;
